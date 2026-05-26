@@ -1,9 +1,11 @@
 import { McpServer } from "skybridge/server";
 import { z } from "zod";
 
+import { sampleLearningCanvasState } from "@/domain/sample-learning-canvas-state.js";
+
 const server = new McpServer(
   {
-    name: "alpic-openai-app",
+    name: "make-it-click-mcp-app",
     version: "0.0.1",
   },
   { capabilities: {} },
@@ -11,57 +13,38 @@ const server = new McpServer(
   .registerTool(
     {
       name: "start",
-      description: "Onboard Skybridge",
+      description:
+        "Open the Make It Click learning canvas. Use it for microturn coaching: keep the board current, update the timeline, teach one tiny idea, ask one check question, then wait.",
       inputSchema: {
-        name: z.string().optional().describe("The user name."),
+        topic: z
+          .string()
+          .optional()
+          .describe("Optional topic label for the learning canvas."),
       },
       view: {
-        component: "onboarding",
-        description: "Onboarding deck",
+        component: "learning-canvas",
+        description: "Make It Click learning canvas",
         csp: {
           resourceDomains: [
             "https://fonts.googleapis.com",
             "https://fonts.gstatic.com",
           ],
-          redirectDomains: ["https://docs.skybridge.tech"],
         },
       },
     },
-    async ({ name }) => {
-      return {
-        structuredContent: { name },
-        content: [{ type: "text", text: `User name: ${name}` }],
-        isError: false,
-      };
-    },
-  )
-  .registerTool(
-    {
-      name: "get-fortune-cookie",
-      description: "Get fortune cookie",
-    },
-    async () => {
-      const predictions = [
-        "A pleasant surprise is waiting for you.",
-        "Your hard work will soon pay off.",
-        "An unexpected friendship will brighten your week.",
-        "The best is yet to come.",
-        "A small step today leads to a giant leap tomorrow.",
-        "Trust your instincts: they are sharper than you think.",
-        "Adventure awaits just around the corner.",
-        "A long-forgotten idea will return with great success.",
-        "Kindness given today will be returned threefold.",
-        "Something you lost will soon be found.",
-      ];
-      const prediction =
-        predictions[Math.floor(Math.random() * predictions.length)];
-
-      // simulate backend work
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    async ({ topic }) => {
+      const state = topic
+        ? { ...sampleLearningCanvasState, topic }
+        : sampleLearningCanvasState;
 
       return {
-        structuredContent: { prediction },
-        content: [{ type: "text", text: prediction }],
+        structuredContent: { state },
+        content: [
+          {
+            type: "text",
+            text: `Opened learning canvas for ${state.topic}.`,
+          },
+        ],
         isError: false,
       };
     },
