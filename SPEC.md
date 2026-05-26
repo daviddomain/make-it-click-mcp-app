@@ -4,6 +4,8 @@
 
 Build a Skybridge MCP/ChatGPT app that turns the `make-it-click` coaching pattern into a visible learning canvas.
 
+The coaching behavior is captured in [docs/coach-policy.md](docs/coach-policy.md) and as structured constants in `src/domain/coach-policy.ts`.
+
 The app should help ChatGPT and the user share the same learning state:
 
 - what the current confusion knot is,
