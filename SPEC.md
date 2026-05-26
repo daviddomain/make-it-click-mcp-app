@@ -23,6 +23,42 @@ Use a two-column view:
 
 The learning board should make the current model visible without replacing the conversation. The timeline should show progress and uncertainty across microturns.
 
+## Architecture Layers
+
+Separate the coaching behavior into three layers:
+
+1. **Skill principles as app contract**
+
+   The Make It Click rules are fixed product logic, not optional style guidance:
+
+   - one small idea,
+   - one example max,
+   - one check question,
+   - wait for the user's next signal.
+
+   These rules belong in the spec, coach policy, and later in server-side validation where practical.
+
+2. **Tool and app instructions for ChatGPT**
+
+   The MCP app should expose purpose-built tools such as `start_learning_canvas` and `update_microturn`.
+
+   Tool descriptions should tell ChatGPT when and how to use the app: use it for microturn coaching, keep the canvas current, and update the timeline instead of letting the learning state live only in the chat transcript.
+
+3. **Structured state instead of prompt-only behavior**
+
+   The core value is machine-readable learning state, not a copied prompt.
+
+   Important state fields:
+
+   - `currentKnot`
+   - `tinyCoreIdea`
+   - `exampleBlock`
+   - `checkQuestion`
+   - `timeline`
+   - `confidence`
+
+   ChatGPT should be able to continue from this state without reconstructing the whole learning process from prose.
+
 ## Initial Learning Board Fields
 
 - Current knot
