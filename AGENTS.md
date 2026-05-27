@@ -127,6 +127,40 @@ Deploy only when explicitly requested:
 npm run deploy
 ```
 
+## Process Hygiene
+
+Agents must not leave long-running local processes running after completing a task.
+
+Avoid persistent watch commands for validation unless explicitly requested. Prefer bounded commands such as:
+
+- `npm run build`
+- one-shot smoke scripts
+- targeted test commands
+
+If a task requires starting a long-running process such as:
+
+- `npm run dev`
+- `skybridge dev`
+- `tsc --watch`
+- Playwright UI
+- Chrome DevTools MCP
+- local browser automation servers
+
+then the agent must:
+
+1. Track the process ID.
+2. Stop the process before committing or opening a PR.
+3. Verify that no project-related process started by the task is still running.
+4. Mention cleanup in the final report.
+
+The expected final state is:
+
+- clean working tree
+- no lingering dev servers
+- no watchers
+- no browser automation servers
+- no MCP helper processes started by the agent
+
 ## Validation
 
 Before finishing a code change, run:
