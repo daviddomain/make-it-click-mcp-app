@@ -2,6 +2,7 @@ import "@/index.css";
 
 import {
   BadgeCheck,
+  CheckCircle2,
   CircleDot,
   CircleHelp,
   Lightbulb,
@@ -11,7 +12,7 @@ import {
   RefreshCcwDot,
   UserRoundCheck,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLayout } from "skybridge/web";
 
 import { useToolInfo } from "@/helpers.js";
@@ -19,6 +20,8 @@ import type {
   ExampleBlock,
   LearningCanvasState,
   MicroturnKind,
+  MultipleChoiceCheckBlock,
+  MultipleChoiceCheckResult,
   TimelineStatus,
 } from "@/domain/learning-canvas-state.js";
 
@@ -111,7 +114,7 @@ function ExampleBlockView({ example }: { example: ExampleBlock | null }) {
   if (example.kind === "interaction") {
     return (
       <div className="rounded-md border border-border bg-muted p-3">
-        <p className="font-medium">{example.block.prompt}</p>
+        <p className="font-medium">{example.block.question}</p>
         <p className="mt-1 text-xs text-muted-foreground">
           {example.block.type}
         </p>
@@ -120,6 +123,86 @@ function ExampleBlockView({ example }: { example: ExampleBlock | null }) {
   }
 
   return <p>{example.text}</p>;
+}
+
+function MultipleChoiceCheckView({
+  block,
+}: {
+  block: MultipleChoiceCheckBlock;
+}) {
+  const [selectedOptionId, setSelectedOptionId] = useState(
+    block.selectedOptionId ?? "",
+  );
+
+  useEffect(() => {
+    setSelectedOptionId(block.selectedOptionId ?? "");
+  }, [block.id, block.selectedOptionId]);
+
+  const selectedOption = useMemo(
+    () => block.options.find((option) => option.id === selectedOptionId),
+    [block.options, selectedOptionId],
+  );
+
+  const interactionResult: MultipleChoiceCheckResult | null = selectedOption
+    ? {
+        type: "MultipleChoiceCheck",
+        blockId: block.id,
+        question: block.question,
+        selectedOptionId: selectedOption.id,
+        selectedValue: selectedOption.value,
+        selectedLabel: selectedOption.label,
+      }
+    : null;
+
+  return (
+    <div
+      className="mt-4 rounded-md border border-primary/25 bg-background p-3"
+      data-llm={
+        interactionResult
+          ? `MultipleChoiceCheck selected: ${JSON.stringify(interactionResult)}`
+          : "MultipleChoiceCheck waiting for one selected option."
+      }
+    >
+      <p className="text-sm font-semibold leading-6">{block.question}</p>
+      <div
+        className="mt-3 grid gap-2"
+        role="radiogroup"
+        aria-label={block.question}
+      >
+        {block.options.map((option) => {
+          const isSelected = option.id === selectedOptionId;
+
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={isSelected}
+              onClick={() => setSelectedOptionId(option.id)}
+              className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition ${
+                isSelected
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border bg-card text-foreground hover:border-primary/50 hover:bg-muted/60"
+              }`}
+            >
+              <span>{option.label}</span>
+              {isSelected ? (
+                <CheckCircle2
+                  className="size-4 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      {interactionResult ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Selected: {interactionResult.selectedLabel}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function ConfidenceView({
@@ -224,6 +307,9 @@ export default function LearningCanvas() {
                   </span>
                 )}
               </p>
+              {state.board.interactionBlock?.type === "MultipleChoiceCheck" ? (
+                <MultipleChoiceCheckView block={state.board.interactionBlock} />
+              ) : null}
             </FieldCard>
           </div>
           <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">

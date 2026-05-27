@@ -30,12 +30,31 @@ export const confidenceSchema = z.object({
 
 export const interactionBlockTypeSchema = z.enum(coachPolicy.interactionBlocks);
 
-// Placeholder shape for future typed interaction blocks. Each concrete block can
-// later replace `data` with a stricter schema without changing the canvas shell.
-export const interactionBlockSchema = z.object({
-  type: interactionBlockTypeSchema,
-  prompt: z.string(),
-  data: z.record(z.string(), z.unknown()).default({}),
+export const multipleChoiceOptionSchema = z.object({
+  id: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  value: z.string().trim().min(1).optional(),
+});
+
+export const multipleChoiceCheckBlockSchema = z.object({
+  type: z.literal("MultipleChoiceCheck"),
+  id: z.string().trim().min(1),
+  question: z.string().trim().min(1),
+  options: z.array(multipleChoiceOptionSchema).min(2).max(6),
+  selectedOptionId: z.string().trim().min(1).optional(),
+});
+
+export const interactionBlockSchema = z.discriminatedUnion("type", [
+  multipleChoiceCheckBlockSchema,
+]);
+
+export const multipleChoiceCheckResultSchema = z.object({
+  type: z.literal("MultipleChoiceCheck"),
+  blockId: z.string().trim().min(1),
+  question: z.string().trim().min(1),
+  selectedOptionId: z.string().trim().min(1),
+  selectedValue: z.string().trim().min(1).optional(),
+  selectedLabel: z.string().trim().min(1),
 });
 
 export const exampleBlockSchema = z.discriminatedUnion("kind", [
@@ -71,6 +90,7 @@ export const learningBoardStateSchema = z.object({
   tinyCoreIdea: z.string().nullable().default(null),
   exampleBlock: exampleBlockSchema.nullable().default(null),
   checkQuestion: z.string().nullable().default(null),
+  interactionBlock: interactionBlockSchema.nullable().default(null),
   userVersion: z.string().nullable().default(null),
   confidence: confidenceSchema.default({ status: "unknown" }),
 });
@@ -87,6 +107,7 @@ export const microturnTimelineItemSchema = z.object({
       "tinyCoreIdea",
       "exampleBlock",
       "checkQuestion",
+      "interactionBlock",
       "userVersion",
       "confidence",
     ])
@@ -106,7 +127,14 @@ export type MicroturnKind = z.infer<typeof microturnKindSchema>;
 export type ConfidenceStatus = z.infer<typeof confidenceStatusSchema>;
 export type Confidence = z.infer<typeof confidenceSchema>;
 export type InteractionBlockType = z.infer<typeof interactionBlockTypeSchema>;
+export type MultipleChoiceOption = z.infer<typeof multipleChoiceOptionSchema>;
+export type MultipleChoiceCheckBlock = z.infer<
+  typeof multipleChoiceCheckBlockSchema
+>;
 export type InteractionBlock = z.infer<typeof interactionBlockSchema>;
+export type MultipleChoiceCheckResult = z.infer<
+  typeof multipleChoiceCheckResultSchema
+>;
 export type ExampleBlock = z.infer<typeof exampleBlockSchema>;
 export type LearningBoardState = z.infer<typeof learningBoardStateSchema>;
 export type MicroturnTimelineItem = z.infer<

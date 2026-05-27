@@ -20,6 +20,29 @@ export const sampleLearningCanvasState = learningCanvasStateSchema.parse({
     },
     checkQuestion:
       "If `itemCount` always comes from `items.length`, should it be another state value?",
+    interactionBlock: {
+      type: "MultipleChoiceCheck",
+      id: "check-item-count-multiple-choice",
+      question:
+        "If `itemCount` always comes from `items.length`, should it be another state value?",
+      options: [
+        {
+          id: "yes-state",
+          label: "Yes, because it changes when items change.",
+          value: "yes",
+        },
+        {
+          id: "no-derived",
+          label: "No, calculate it from items while rendering.",
+          value: "no",
+        },
+        {
+          id: "depends-effect",
+          label: "Only if an effect keeps it synced.",
+          value: "effect",
+        },
+      ],
+    },
     userVersion:
       "I think state is for values that can change, but I am not sure where derived values belong.",
     confidence: {

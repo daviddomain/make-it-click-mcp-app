@@ -47,6 +47,7 @@ export function createInitialLearningCanvasState({
       exampleBlock: null,
       checkQuestion:
         "Which part feels most confusing right now: the words, the sequence, the result, or why it matters?",
+      interactionBlock: null,
       userVersion: normalizedContext,
       confidence: {
         status: "unknown",
