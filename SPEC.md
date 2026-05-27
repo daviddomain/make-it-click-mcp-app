@@ -44,6 +44,8 @@ Separate the coaching behavior into three layers:
 
    Tool descriptions should tell ChatGPT when and how to use the app: use it for microturn coaching, keep the canvas current, and update the timeline instead of letting the learning state live only in the chat transcript.
 
+   The `start_learning_canvas` tool starts a session from a topic, optional confusion, and optional context. It returns structured canvas state whose first timeline item is an open diagnosis microturn.
+
 3. **Structured state instead of prompt-only behavior**
 
    The core value is machine-readable learning state, not a copied prompt.

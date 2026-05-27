@@ -164,7 +164,7 @@ function ConfidenceView({
 
 export default function LearningCanvas() {
   const { theme } = useLayout();
-  const { output } = useToolInfo<"start">();
+  const { output } = useToolInfo<"start_learning_canvas">();
   const state = output?.state;
 
   if (!state) {
