@@ -84,6 +84,8 @@ Allowed block families:
 
 The model may choose a block type and provide data for it. It must not provide arbitrary executable UI code.
 
+Future view-driven interaction blocks should stay typed, controlled, and limited to one microturn. They should not allow arbitrary React or executable code from model output.
+
 ## Teach-Back
 
 After the user answers two consecutive check questions correctly, pause and ask for a teach-back before adding new information.

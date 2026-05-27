@@ -23,6 +23,12 @@ Use a two-column view:
 
 The learning board should make the current model visible without replacing the conversation. The timeline should show progress and uncertainty across microturns.
 
+The long-term product direction is an interactive learning canvas, not only a passive status board in chat. Chat-driven updates are the current stepping stone. The intended next direction is view-driven, typed interactions so the user can answer checks, select options, and provide feedback directly in the canvas while still supporting the Make It Click rhythm:
+
+```txt
+diagnose -> one tiny idea -> check -> wait
+```
+
 ## Architecture Layers
 
 Separate the coaching behavior into three layers:
