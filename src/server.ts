@@ -18,6 +18,7 @@ const server = new McpServer(
       inputSchema: {
         topic: z
           .string()
+          .trim()
           .min(1)
           .describe("Topic or concept the user wants to understand."),
         confusion: z
