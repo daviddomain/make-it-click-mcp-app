@@ -23,6 +23,12 @@ Use a two-column view:
 
 The learning board should make the current model visible without replacing the conversation. The timeline should show progress and uncertainty across microturns.
 
+The learning canvas should feel calm, focused, and inviting. Visual design is
+part of the learning experience, not decoration only: the UI should guide
+attention toward the active microturn, especially the current check, and help
+the user stay with one small step until the concept clicks. Avoid visual
+complexity that makes the board feel like a raw state or debug dashboard.
+
 The long-term product direction is an interactive learning canvas, not only a passive status board in chat. Chat-driven updates are the current stepping stone. The intended next direction is view-driven, typed interactions so the user can answer checks, select options, and provide feedback directly in the canvas while still supporting the Make It Click rhythm:
 
 ```txt
