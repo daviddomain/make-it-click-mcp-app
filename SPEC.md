@@ -46,6 +46,8 @@ Separate the coaching behavior into three layers:
 
    The `start_learning_canvas` tool starts a session from a topic, optional confusion, and optional context. It returns structured canvas state whose first timeline item is an open diagnosis microturn.
 
+   The `update_microturn` tool updates an existing canvas from the latest user answer or typed interaction result. It records the user's signal, updates the active timeline status, and can append the next microturn when the caller provides one tiny idea, at most one example, and exactly one check question.
+
 3. **Structured state instead of prompt-only behavior**
 
    The core value is machine-readable learning state, not a copied prompt.
