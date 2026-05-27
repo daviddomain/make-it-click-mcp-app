@@ -1,7 +1,7 @@
 import { McpServer } from "skybridge/server";
 import { z } from "zod";
 
-import { sampleLearningCanvasState } from "@/domain/sample-learning-canvas-state.js";
+import { createInitialLearningCanvasState } from "@/domain/start-learning-canvas.js";
 
 const server = new McpServer(
   {
@@ -12,14 +12,22 @@ const server = new McpServer(
 )
   .registerTool(
     {
-      name: "start",
+      name: "start_learning_canvas",
       description:
-        "Open the Make It Click learning canvas. Use it for microturn coaching: keep the board current, update the timeline, teach one tiny idea, ask one check question, then wait.",
+        "Start a Make It Click learning canvas for microturn coaching. Diagnose the user's confusion first, keep the board current, add a diagnosis timeline entry, teach one tiny idea at a time, use one example max, ask exactly one check question, then wait for the user's next signal.",
       inputSchema: {
         topic: z
           .string()
+          .min(1)
+          .describe("Topic or concept the user wants to understand."),
+        confusion: z
+          .string()
           .optional()
-          .describe("Optional topic label for the learning canvas."),
+          .describe("User's current confusion, question, or suspected knot."),
+        context: z
+          .string()
+          .optional()
+          .describe("Optional context from the conversation or user's attempt."),
       },
       view: {
         component: "learning-canvas",
@@ -32,10 +40,12 @@ const server = new McpServer(
         },
       },
     },
-    async ({ topic }) => {
-      const state = topic
-        ? { ...sampleLearningCanvasState, topic }
-        : sampleLearningCanvasState;
+    async ({ topic, confusion, context }) => {
+      const state = createInitialLearningCanvasState({
+        topic,
+        confusion,
+        context,
+      });
 
       return {
         structuredContent: { state },
