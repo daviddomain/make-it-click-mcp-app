@@ -39,3 +39,16 @@ export const coachPolicy = {
 } as const;
 
 export type CoachPolicy = typeof coachPolicy;
+
+const runtimeContract = [
+  `Follow the ${coachPolicy.defaultRhythm.join(" -> ")} rhythm.`,
+  coachPolicy.runtimeRules.join(" "),
+  "Keep structured learning canvas state current instead of relying only on chat prose.",
+].join(" ");
+
+export const coachPolicyToolDescriptions = {
+  startLearningCanvas:
+    `Start a Make It Click learning canvas for microturn coaching. ${runtimeContract} Open with diagnosis and a current board state.`,
+  updateMicroturn:
+    `Update an existing Make It Click learning canvas after the user's latest plain answer or typed interaction result. ${runtimeContract} Record the signal, mark the active timeline item, and add a next microturn only when it stays typed, controlled, and one-microturn scoped. The view records interaction data; do not rely on it to auto-grade or auto-advance.`,
+} as const;

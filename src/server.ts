@@ -1,6 +1,7 @@
 import { McpServer } from "skybridge/server";
 import { z } from "zod";
 
+import { coachPolicyToolDescriptions } from "@/domain/coach-policy.js";
 import { createInitialLearningCanvasState } from "@/domain/start-learning-canvas.js";
 import {
   applyMicroturnUpdate,
@@ -17,8 +18,7 @@ const server = new McpServer(
   .registerTool(
     {
       name: "start_learning_canvas",
-      description:
-        "Start a Make It Click learning canvas for microturn coaching. Diagnose the user's confusion first, keep the board current, add a diagnosis timeline entry, teach one tiny idea at a time, use one example max, ask exactly one check question, then wait for the user's next signal.",
+      description: coachPolicyToolDescriptions.startLearningCanvas,
       inputSchema: {
         topic: z
           .string()
@@ -67,8 +67,7 @@ const server = new McpServer(
   .registerTool(
     {
       name: "update_microturn",
-      description:
-        "Update an existing Make It Click learning canvas after the user's latest answer or interaction. Pass the current structured state, record the user signal, mark the active timeline item as understood, uncertain, or revisit, and add the next microturn only when you can preserve the rhythm: one tiny idea, one example max, exactly one check question, then wait.",
+      description: coachPolicyToolDescriptions.updateMicroturn,
       inputSchema: {
         state: updateMicroturnInputShape.state.describe(
           "Existing LearningCanvasState returned by start_learning_canvas or update_microturn.",
