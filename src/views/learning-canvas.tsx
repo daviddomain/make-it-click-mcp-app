@@ -51,14 +51,27 @@ const statusLabels: Record<TimelineStatus, string> = {
 function FieldCard({
   icon: Icon,
   label,
+  tone = "default",
+  className = "",
   children,
 }: {
   icon: typeof CircleDot;
   label: string;
+  tone?: "default" | "primary" | "secondary";
+  className?: string;
   children: ReactNode;
 }) {
+  const toneClassNames = {
+    default: "bg-card shadow-sm",
+    primary:
+      "border-primary/40 bg-primary/5 shadow-sm dark:border-primary/50 dark:bg-primary/10",
+    secondary: "bg-muted/40 shadow-none",
+  }[tone];
+
   return (
-    <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <section
+      className={`rounded-lg border border-border p-4 ${toneClassNames} ${className}`}
+    >
       <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
         <Icon className="size-4" aria-hidden="true" />
         <h2>{label}</h2>
@@ -85,7 +98,7 @@ function ExampleBlockView({ example }: { example: ExampleBlock | null }) {
 
   if (example.kind === "code") {
     return (
-      <pre className="overflow-x-auto rounded-md border border-border bg-muted p-3 text-xs leading-5">
+      <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-border bg-muted p-3 text-xs leading-5">
         <code>{example.code}</code>
       </pre>
     );
@@ -182,33 +195,49 @@ export default function LearningCanvas() {
 
       <div className="grid gap-4 md:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.8fr)]">
         <div className="grid gap-4 sm:grid-cols-2">
-          <FieldCard icon={CircleHelp} label="Current knot">
+          <FieldCard icon={CircleHelp} label="What's confusing">
             {state.board.currentKnot}
           </FieldCard>
-          <FieldCard icon={Lightbulb} label="Tiny core idea">
+          <FieldCard icon={Lightbulb} label="Tiny idea">
             {state.board.tinyCoreIdea ?? (
               <span className="text-muted-foreground">Not chosen yet.</span>
             )}
           </FieldCard>
-          <FieldCard icon={PanelsTopLeft} label="Example or visual">
+          <FieldCard
+            icon={PanelsTopLeft}
+            label="One example"
+            className="sm:col-span-2"
+          >
             <ExampleBlockView example={state.board.exampleBlock} />
           </FieldCard>
-          <FieldCard icon={UserRoundCheck} label="User version">
-            {state.board.userVersion ?? (
-              <span className="text-muted-foreground">
-                No user version recorded yet.
-              </span>
-            )}
-          </FieldCard>
+          <div className="sm:col-span-2">
+            <FieldCard
+              icon={MessageCircleQuestion}
+              label="Your check"
+              tone="primary"
+            >
+              <p className="text-base font-medium leading-7">
+                {state.board.checkQuestion ?? (
+                  <span className="text-muted-foreground">
+                    No check question queued.
+                  </span>
+                )}
+              </p>
+            </FieldCard>
+          </div>
           <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
-            <FieldCard icon={MessageCircleQuestion} label="Check question">
-              {state.board.checkQuestion ?? (
+            <FieldCard
+              icon={UserRoundCheck}
+              label="User version"
+              tone="secondary"
+            >
+              {state.board.userVersion ?? (
                 <span className="text-muted-foreground">
-                  No check question queued.
+                  No user version recorded yet.
                 </span>
               )}
             </FieldCard>
-            <FieldCard icon={BadgeCheck} label="Confidence / status">
+            <FieldCard icon={BadgeCheck} label="Confidence / status" tone="secondary">
               <ConfidenceView confidence={state.board.confidence} />
             </FieldCard>
           </div>
@@ -220,7 +249,7 @@ export default function LearningCanvas() {
               className="size-4 text-muted-foreground"
               aria-hidden="true"
             />
-            <h2 className="text-sm font-semibold">Microturn timeline</h2>
+            <h2 className="text-sm font-semibold">Learning progress</h2>
           </div>
           <ol className="flex flex-col gap-3">
             {state.timeline.map((item) => (
