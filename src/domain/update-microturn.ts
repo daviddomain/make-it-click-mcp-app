@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   confidenceSchema,
   exampleBlockSchema,
+  interactionBlockSchema,
   learningCanvasStateSchema,
   microturnKindSchema,
   type LearningCanvasState,
@@ -22,6 +23,7 @@ export const nextMicroturnInputSchema = z.object({
   tinyCoreIdea: z.string().trim().min(1),
   exampleBlock: exampleBlockSchema.nullable().optional(),
   checkQuestion: z.string().trim().min(1),
+  interactionBlock: interactionBlockSchema.nullable().optional(),
   confidence: confidenceSchema.optional(),
   summary: z.string().trim().min(1).optional(),
 });
@@ -147,6 +149,7 @@ export function applyMicroturnUpdate(
     board.tinyCoreIdea = nextMicroturn.tinyCoreIdea;
     board.exampleBlock = nextMicroturn.exampleBlock ?? null;
     board.checkQuestion = nextMicroturn.checkQuestion;
+    board.interactionBlock = nextMicroturn.interactionBlock ?? null;
     board.confidence = nextMicroturn.confidence ?? {
       status: "unknown",
       note: "Waiting for the next check answer.",

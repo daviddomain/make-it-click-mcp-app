@@ -111,6 +111,12 @@ Candidate blocks:
 
 Each block should support exactly one microturn, not a whole lesson.
 
+The first implemented block is `MultipleChoiceCheck`. It is structured data with
+a stable block id, one question, and a small list of serializable options. A
+selected answer should be captured as a structured result containing the block
+id and selected option, so it can be passed to `update_microturn` as
+`interactionResult`.
+
 ## Data Model Direction
 
 Represent learning state as data first, then render it through known components.

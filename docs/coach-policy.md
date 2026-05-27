@@ -86,6 +86,10 @@ The model may choose a block type and provide data for it. It must not provide a
 
 Future view-driven interaction blocks should stay typed, controlled, and limited to one microturn. They should not allow arbitrary React or executable code from model output.
 
+For multiple choice checks, provide exactly one question and a small list of
+explicit answer options. The user's selection should be recorded as structured
+interaction data, not graded or expanded into a new lesson by the view.
+
 ## Teach-Back
 
 After the user answers two consecutive check questions correctly, pause and ask for a teach-back before adding new information.
