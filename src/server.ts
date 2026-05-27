@@ -35,7 +35,7 @@ const server = new McpServer(
           .describe("Optional context from the conversation or user's attempt."),
       },
       view: {
-        component: "learning-canvas",
+        component: "start-learning-canvas",
         description: "Make It Click learning canvas",
         csp: {
           resourceDomains: [
@@ -87,7 +87,7 @@ const server = new McpServer(
         ),
       },
       view: {
-        component: "learning-canvas",
+        component: "update-learning-canvas",
         description: "Make It Click learning canvas",
         csp: {
           resourceDomains: [
