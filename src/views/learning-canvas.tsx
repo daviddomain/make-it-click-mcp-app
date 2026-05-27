@@ -164,7 +164,8 @@ function ConfidenceView({
 
 export default function LearningCanvas() {
   const { theme } = useLayout();
-  const { output } = useToolInfo<"start_learning_canvas">();
+  const { output } =
+    useToolInfo<"start_learning_canvas" | "update_microturn">();
   const state = output?.state;
 
   if (!state) {

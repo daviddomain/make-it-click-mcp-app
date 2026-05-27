@@ -23,6 +23,12 @@ Use a two-column view:
 
 The learning board should make the current model visible without replacing the conversation. The timeline should show progress and uncertainty across microturns.
 
+The long-term product direction is an interactive learning canvas, not only a passive status board in chat. Chat-driven updates are the current stepping stone. The intended next direction is view-driven, typed interactions so the user can answer checks, select options, and provide feedback directly in the canvas while still supporting the Make It Click rhythm:
+
+```txt
+diagnose -> one tiny idea -> check -> wait
+```
+
 ## Architecture Layers
 
 Separate the coaching behavior into three layers:
@@ -45,6 +51,8 @@ Separate the coaching behavior into three layers:
    Tool descriptions should tell ChatGPT when and how to use the app: use it for microturn coaching, keep the canvas current, and update the timeline instead of letting the learning state live only in the chat transcript.
 
    The `start_learning_canvas` tool starts a session from a topic, optional confusion, and optional context. It returns structured canvas state whose first timeline item is an open diagnosis microturn.
+
+   The `update_microturn` tool updates an existing canvas from the latest user answer or typed interaction result. It records the user's signal, updates the active timeline status, and can append the next microturn when the caller provides one tiny idea, at most one example, and exactly one check question.
 
 3. **Structured state instead of prompt-only behavior**
 

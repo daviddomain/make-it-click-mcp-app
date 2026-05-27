@@ -66,6 +66,8 @@ Each timeline item should represent one microturn. It can be marked as:
 
 Timeline entries should not become full lesson notes. They are checkpoints for the coaching process.
 
+The `update_microturn` tool should update these checkpoints from structured state, not from chat prose alone. It should record the latest user answer or typed interaction result, mark the active checkpoint, and only append the next checkpoint when the next turn still has one tiny idea, at most one example, and one check question.
+
 ## Interaction Block Rules
 
 Each interaction block should support exactly one microturn.
@@ -81,6 +83,8 @@ Allowed block families:
 - fill-gap checks
 
 The model may choose a block type and provide data for it. It must not provide arbitrary executable UI code.
+
+Future view-driven interaction blocks should stay typed, controlled, and limited to one microturn. They should not allow arbitrary React or executable code from model output.
 
 ## Teach-Back
 
