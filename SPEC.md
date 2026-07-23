@@ -121,7 +121,10 @@ The first implemented block is `MultipleChoiceCheck`. It is structured data with
 a stable block id, one question, and a small list of serializable options. A
 selected answer should be captured as a structured result containing the block
 id and selected option, so it can be passed to `update_microturn` as
-`interactionResult`.
+`interactionResult`. Submission is explicit: the view hands the typed result to
+the tool flow and exposes the resulting structured context to the model, but it
+does not grade the answer, change the timeline status, or create the next
+microturn.
 
 ## Data Model Direction
 
