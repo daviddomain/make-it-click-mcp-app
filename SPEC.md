@@ -57,13 +57,29 @@ Separate the coaching behavior into three layers:
 
 2. **Tool and app instructions for ChatGPT**
 
-   The MCP app should expose purpose-built tools such as `start_learning_canvas` and `update_microturn`.
+   The MCP app exposes purpose-built `start_learning_canvas`,
+   `update_microturn`, and `read_learning_session` tools.
 
    Tool descriptions should tell ChatGPT when and how to use the app: use it for microturn coaching, keep the canvas current, and update the timeline instead of letting the learning state live only in the chat transcript.
 
-   The `start_learning_canvas` tool starts a session from a topic, optional confusion, and optional context. It returns structured canvas state whose first timeline item is an open diagnosis microturn.
+   The view-backed `start_learning_canvas` tool creates one server-owned
+   session from a topic, optional confusion, and optional context. It returns a
+   stable session id, revision, timestamps, and structured canvas state whose
+   first timeline item is an open diagnosis microturn.
 
-   The `update_microturn` tool updates an existing canvas from the latest user answer or typed interaction result. It records the user's signal, updates the active timeline status, and can append the next microturn when the caller provides one tiny idea, at most one example, and exactly one check question.
+   The viewless `update_microturn` tool requires the session id and expected
+   revision instead of a caller-owned copy of the state. It records the latest
+   user answer or typed interaction result, updates the active timeline status,
+   and can append the next microturn when the caller provides one tiny idea, at
+   most one example, and exactly one check question. A stale revision returns a
+   structured conflict and leaves the authoritative state unchanged.
+
+   The app-only, viewless `read_learning_session` tool returns the latest
+   authoritative snapshot when the user explicitly refreshes the active
+   canvas. This explicit refresh is the initial synchronization contract;
+   push-style updates are not assumed. Viewless calls avoid duplicate canvas
+   widgets, but the ChatGPT host still controls surrounding narration and
+   status UI.
 
 3. **Structured state instead of prompt-only behavior**
 
@@ -78,7 +94,10 @@ Separate the coaching behavior into three layers:
    - `timeline`
    - `confidence`
 
-   ChatGPT should be able to continue from this state without reconstructing the whole learning process from prose.
+   ChatGPT should be able to continue from the session snapshot and revision
+   returned by each successful tool result without reconstructing the whole
+   learning process from prose. The initial store is intentionally in-memory
+   and process-local.
 
 ## Initial Learning Board Fields
 
@@ -142,7 +161,9 @@ grade confidence, change timeline status, or advance the coaching flow.
 Represent learning state as data first, then render it through known components.
 
 ```txt
-Tool call -> learning state data -> React view -> user interaction -> updated state for the model
+View-backed start -> server-owned session -> React view
+  -> typed user interaction -> viewless revision-guarded update
+  -> explicit app-only refresh when the active view is stale
 ```
 
 The model should receive enough structured state to continue coaching from the current board and timeline.

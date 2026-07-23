@@ -6,7 +6,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ConfidenceSliderControl } from "../components/confidence-slider-control.js";
 import {
   createConfidenceSliderResult,
-  createConfidenceSliderSubmission,
   normalizeConfidenceSliderValue,
 } from "./confidence-slider.js";
 import {
@@ -19,7 +18,6 @@ import {
 } from "./learning-canvas-state.js";
 import {
   createMultipleChoiceCheckResult,
-  createMultipleChoiceSubmission,
 } from "./multiple-choice-check.js";
 import { createInitialLearningCanvasState } from "./start-learning-canvas.js";
 import { applyMicroturnUpdate } from "./update-microturn.js";
@@ -172,19 +170,14 @@ test("rejects a multiple-choice result for an option outside the block", () => {
   );
 });
 
-test("creates an exact typed submission without grading or advancing", () => {
+test("applies an exact typed result without grading or advancing", () => {
   const state = createDiagnosticState();
   state.board.interactionBlock = createMultipleChoiceBlock();
-  const submission = createMultipleChoiceSubmission(
-    state,
+  const interactionResult = createMultipleChoiceCheckResult(
     state.board.interactionBlock,
     "timer",
   );
-
-  assert.deepEqual(Object.keys(submission), ["state", "interactionResult"]);
-  assert.strictEqual(submission.state, state);
-
-  const updatedState = applyMicroturnUpdate(submission);
+  const updatedState = applyMicroturnUpdate({ state, interactionResult });
 
   assert.equal(updatedState.timeline.length, state.timeline.length);
   assert.equal(updatedState.timeline[0]?.status, "open");
@@ -250,16 +243,12 @@ test("normalizes floating-point noise and creates the confidence result", () => 
   });
 });
 
-test("creates a confidence submission without grading or advancing", () => {
+test("applies a confidence result without grading or advancing", () => {
   const state = createDiagnosticState();
   const block = createConfidenceSliderBlock();
   state.board.interactionBlock = block;
-  const submission = createConfidenceSliderSubmission(state, block, 0.7);
-
-  assert.deepEqual(Object.keys(submission), ["state", "interactionResult"]);
-  assert.strictEqual(submission.state, state);
-
-  const updatedState = applyMicroturnUpdate(submission);
+  const interactionResult = createConfidenceSliderResult(block, 0.7);
+  const updatedState = applyMicroturnUpdate({ state, interactionResult });
 
   assert.equal(updatedState.timeline.length, state.timeline.length);
   assert.equal(updatedState.timeline[0]?.status, "open");

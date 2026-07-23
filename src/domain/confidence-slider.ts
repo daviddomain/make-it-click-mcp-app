@@ -1,13 +1,11 @@
 import type {
   ConfidenceSliderBlock,
   ConfidenceSliderResult,
-  LearningCanvasState,
 } from "./learning-canvas-state.js";
 import {
   confidenceSliderResultSchema,
   confidenceSliderValueSchema,
 } from "./learning-canvas-state.js";
-import type { UpdateMicroturnInput } from "./update-microturn.js";
 
 export function normalizeConfidenceSliderValue(value: number): number {
   const validValue = confidenceSliderValueSchema.parse(value);
@@ -25,15 +23,4 @@ export function createConfidenceSliderResult(
     question: block.question,
     value: normalizeConfidenceSliderValue(value),
   });
-}
-
-export function createConfidenceSliderSubmission(
-  state: LearningCanvasState,
-  block: ConfidenceSliderBlock,
-  value: number,
-): Pick<UpdateMicroturnInput, "state" | "interactionResult"> {
-  return {
-    state,
-    interactionResult: createConfidenceSliderResult(block, value),
-  };
 }
