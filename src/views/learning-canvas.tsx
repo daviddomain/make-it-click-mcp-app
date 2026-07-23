@@ -3,6 +3,7 @@ import "@/index.css";
 import {
   BadgeCheck,
   CheckCircle2,
+  ChevronDown,
   CircleHelp,
   Lightbulb,
   Maximize2,
@@ -17,24 +18,34 @@ import {
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
 } from "react";
-import { getAdaptor, useDisplayMode, useLayout } from "skybridge/web";
+import {
+  getAdaptor,
+  useDisplayMode,
+  useLayout,
+  useUser,
+} from "skybridge/web";
 
-import { useCallTool, useToolInfo } from "@/helpers.js";
 import { ConfidenceSliderControl } from "@/components/confidence-slider-control.js";
 import {
   createConfidenceSliderResult,
   normalizeConfidenceSliderValue,
 } from "@/domain/confidence-slider.js";
+import {
+  deriveLearningCanvasPresentation,
+  getLearningCanvasCopy,
+  type LearningCanvasCopy,
+  type LearningCanvasPresentation,
+} from "@/domain/learning-canvas-presentation.js";
 import type {
   ConfidenceSliderBlock,
   ConfidenceSliderResult,
   ExampleBlock,
   InteractionBlock,
   LearningCanvasState,
-  MicroturnKind,
   MultipleChoiceCheckBlock,
   MultipleChoiceCheckResult,
   TimelineStatus,
@@ -46,7 +57,6 @@ import {
   completeSessionSynchronization,
   createMountedPresentationState,
   deriveLearningShellLayout,
-  deriveLearningShellViewModel,
   failDisplayModeRequest,
   failSessionSynchronization,
   reconcileLearningSession,
@@ -55,51 +65,88 @@ import {
 } from "@/domain/learning-shell.js";
 import type { LearningSession } from "@/domain/learning-session.js";
 import { createMultipleChoiceCheckResult } from "@/domain/multiple-choice-check.js";
+import { useCallTool, useToolInfo } from "@/helpers.js";
 
 const statusClassNames: Record<TimelineStatus, string> = {
-  open: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200",
+  open: "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-200",
   understood:
-    "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200",
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200",
   uncertain:
-    "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200",
+    "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
   revisit:
-    "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200",
+    "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-200",
 };
 
-const kindLabels: Record<MicroturnKind, string> = {
-  diagnose: "Diagnose",
-  tinyIdea: "Tiny idea",
-  example: "Example",
-  check: "Check",
-  teachBack: "Teach-back",
-  nextKnot: "Next knot",
-};
+const focusRingClassName =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+const modeButtonClassName = `inline-flex min-h-10 min-w-0 items-center justify-center gap-2 rounded-lg bg-muted/70 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted ${focusRingClassName} disabled:cursor-wait disabled:opacity-60`;
 
-const statusLabels: Record<TimelineStatus, string> = {
-  open: "Open",
-  understood: "Understood",
-  uncertain: "Uncertain",
-  revisit: "Revisit",
-};
+function useContainerWidth() {
+  const containerRef = useRef<HTMLElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>();
 
-function StatusPill({ status }: { status: TimelineStatus }) {
+  useEffect(() => {
+    const element = containerRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    const updateWidth = (width: number) => {
+      setContainerWidth((current) =>
+        current === width ? current : Math.round(width),
+      );
+    };
+
+    updateWidth(element.getBoundingClientRect().width);
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) {
+        updateWidth(entry.contentRect.width);
+      }
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return { containerRef, containerWidth };
+}
+
+function StatusPill({
+  status,
+  copy,
+}: {
+  status: TimelineStatus;
+  copy: LearningCanvasCopy;
+}) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${statusClassNames[status]}`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusClassNames[status]}`}
     >
-      {statusLabels[status]}
+      {copy.statusLabels[status]}
     </span>
   );
 }
 
-function ExampleBlockView({ example }: { example: ExampleBlock | null }) {
+function ExampleBlockView({
+  example,
+  copy,
+}: {
+  example: ExampleBlock | null;
+  copy: LearningCanvasCopy;
+}) {
   if (!example) {
-    return <p className="text-muted-foreground">No example selected yet.</p>;
+    return <p className="text-muted-foreground">{copy.noExample}</p>;
   }
 
   if (example.kind === "code") {
     return (
-      <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-border bg-muted p-3 text-xs leading-5">
+      <pre className="whitespace-pre-wrap break-words rounded-xl bg-background/80 p-4 text-xs leading-5 ring-1 ring-border/60">
         <code>{example.code}</code>
       </pre>
     );
@@ -111,11 +158,8 @@ function ExampleBlockView({ example }: { example: ExampleBlock | null }) {
 
   if (example.kind === "interaction") {
     return (
-      <div className="rounded-md border border-border bg-muted p-3">
+      <div className="rounded-xl bg-background/70 p-4">
         <p className="font-medium">{example.block.question}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {example.block.type}
-        </p>
       </div>
     );
   }
@@ -127,11 +171,13 @@ function MultipleChoiceCheckView({
   block,
   session,
   showQuestion,
+  copy,
   onSessionChange,
 }: {
   block: MultipleChoiceCheckBlock;
   session: LearningSession;
   showQuestion: boolean;
+  copy: LearningCanvasCopy;
   onSessionChange: (session: LearningSession) => void;
 }) {
   const [selectedOptionId, setSelectedOptionId] = useState(
@@ -163,7 +209,6 @@ function MultipleChoiceCheckView({
   }, [block, selectedOptionId]);
 
   const isPending = submissionState.status === "pending";
-
   const interactionDescription = (() => {
     if (submissionState.status === "success") {
       return `MultipleChoiceCheck submitted: ${JSON.stringify(submissionState.result)}`;
@@ -183,12 +228,10 @@ function MultipleChoiceCheckView({
   })();
 
   const handleOptionSelection = (optionId: string) => {
-    if (isPending) {
-      return;
+    if (!isPending) {
+      setSelectedOptionId(optionId);
+      setSubmissionState({ status: "idle" });
     }
-
-    setSelectedOptionId(optionId);
-    setSubmissionState({ status: "idle" });
   };
 
   const handleSubmit = async () => {
@@ -208,37 +251,30 @@ function MultipleChoiceCheckView({
       const submittedResult =
         result.status === "ok" ? result.interactionResult : null;
 
-      if (result.status !== "ok") {
-        throw new Error(result.error.message);
-      }
-
       if (
         response.isError ||
+        result.status !== "ok" ||
         !submittedResult ||
         submittedResult.type !== "MultipleChoiceCheck" ||
         submittedResult.blockId !== interactionResult.blockId ||
-        submittedResult.selectedOptionId !==
-          interactionResult.selectedOptionId
+        submittedResult.selectedOptionId !== interactionResult.selectedOptionId
       ) {
-        throw new Error("The submitted result was not confirmed.");
+        throw new Error(copy.answerError);
       }
 
       onSessionChange(result.session);
       setSubmissionState({ status: "success", result: submittedResult });
-    } catch (error) {
+    } catch {
       setSubmissionState({
         status: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The answer could not be submitted. Please try again.",
+        message: copy.answerError,
       });
     }
   };
 
   return (
     <div
-      className="mt-5 border-t border-primary/20 pt-5"
+      className="mt-5"
       data-llm={interactionDescription}
       aria-busy={isPending}
     >
@@ -246,7 +282,7 @@ function MultipleChoiceCheckView({
         <p className="text-sm font-semibold leading-6">{block.question}</p>
       ) : null}
       <div
-        className={`${showQuestion ? "mt-3" : ""} grid gap-2.5`}
+        className={`${showQuestion ? "mt-3" : ""} grid gap-2`}
         role="radiogroup"
         aria-label={block.question}
       >
@@ -261,11 +297,11 @@ function MultipleChoiceCheckView({
               aria-checked={isSelected}
               disabled={isPending}
               onClick={() => handleOptionSelection(option.id)}
-              className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition ${
+              className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
                 isSelected
-                  ? "border-primary bg-primary/10 text-foreground"
-                  : "border-border bg-card text-foreground hover:border-primary/50 hover:bg-muted/60"
-              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-wait disabled:opacity-70`}
+                  ? "bg-primary/12 text-foreground ring-2 ring-primary"
+                  : "bg-background/80 text-foreground ring-1 ring-border/70 hover:bg-muted/70"
+              } ${focusRingClassName} disabled:cursor-wait disabled:opacity-70`}
             >
               <span>{option.label}</span>
               {isSelected ? (
@@ -280,21 +316,21 @@ function MultipleChoiceCheckView({
       </div>
       {interactionResult ? (
         <p className="mt-3 text-xs text-muted-foreground">
-          Selected: {interactionResult.selectedLabel}
+          {copy.selected}: {interactionResult.selectedLabel}
         </p>
       ) : null}
       <button
         type="button"
         disabled={!interactionResult || isPending}
         onClick={handleSubmit}
-        className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+        className={`mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 ${focusRingClassName} disabled:cursor-not-allowed disabled:opacity-50`}
       >
-        {isPending ? "Submitting answer..." : "Submit answer"}
+        {isPending ? copy.submittingAnswer : copy.submitAnswer}
       </button>
       <div className="mt-2 min-h-5 text-xs" aria-live="polite">
         {submissionState.status === "success" ? (
           <p className="text-emerald-700 dark:text-emerald-300">
-            Answer submitted. The coach can use the structured result.
+            {copy.answerSubmitted}
           </p>
         ) : null}
         {submissionState.status === "error" ? (
@@ -311,11 +347,13 @@ function ConfidenceSliderView({
   block,
   session,
   showQuestion,
+  copy,
   onSessionChange,
 }: {
   block: ConfidenceSliderBlock;
   session: LearningSession;
   showQuestion: boolean;
+  copy: LearningCanvasCopy;
   onSessionChange: (session: LearningSession) => void;
 }) {
   const [value, setValue] = useState(block.value);
@@ -337,7 +375,6 @@ function ConfidenceSliderView({
     [block, value],
   );
   const isPending = submissionState.status === "pending";
-
   const interactionDescription = (() => {
     if (submissionState.status === "success") {
       return `ConfidenceSlider submitted: ${JSON.stringify(submissionState.result)}`;
@@ -355,12 +392,10 @@ function ConfidenceSliderView({
   })();
 
   const handleValueChange = (nextValue: number) => {
-    if (isPending) {
-      return;
+    if (!isPending) {
+      setValue(normalizeConfidenceSliderValue(nextValue));
+      setSubmissionState({ status: "idle" });
     }
-
-    setValue(normalizeConfidenceSliderValue(nextValue));
-    setSubmissionState({ status: "idle" });
   };
 
   const handleSubmit = async () => {
@@ -380,38 +415,29 @@ function ConfidenceSliderView({
       const submittedResult =
         result.status === "ok" ? result.interactionResult : null;
 
-      if (result.status !== "ok") {
-        throw new Error(result.error.message);
-      }
-
       if (
         response.isError ||
+        result.status !== "ok" ||
         !submittedResult ||
         submittedResult.type !== "ConfidenceSlider" ||
         submittedResult.blockId !== interactionResult.blockId ||
         submittedResult.value !== interactionResult.value
       ) {
-        throw new Error("The submitted result was not confirmed.");
+        throw new Error(copy.confidenceError);
       }
 
       onSessionChange(result.session);
       setSubmissionState({ status: "success", result: submittedResult });
-    } catch (error) {
+    } catch {
       setSubmissionState({
         status: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The confidence could not be submitted. Please try again.",
+        message: copy.confidenceError,
       });
     }
   };
 
   return (
-    <div
-      data-llm={interactionDescription}
-      aria-busy={isPending}
-    >
+    <div data-llm={interactionDescription} aria-busy={isPending}>
       <ConfidenceSliderControl
         block={block}
         value={value}
@@ -419,12 +445,12 @@ function ConfidenceSliderView({
           submissionState.status === "success"
             ? {
                 status: "success",
-                message:
-                  "Confidence submitted. The coach can use the structured result.",
+                message: copy.confidenceSubmitted,
               }
             : submissionState
         }
         showQuestion={showQuestion}
+        copy={copy}
         onValueChange={handleValueChange}
         onSubmit={handleSubmit}
       />
@@ -435,14 +461,15 @@ function ConfidenceSliderView({
 function InteractionBlockView({
   block,
   session,
+  copy,
   onSessionChange,
 }: {
   block: InteractionBlock;
   session: LearningSession;
+  copy: LearningCanvasCopy;
   onSessionChange: (session: LearningSession) => void;
 }) {
-  const state = session.state;
-  const showQuestion = block.question !== state.board.checkQuestion;
+  const showQuestion = block.question !== session.state.board.checkQuestion;
 
   switch (block.type) {
     case "MultipleChoiceCheck":
@@ -451,6 +478,7 @@ function InteractionBlockView({
           block={block}
           session={session}
           showQuestion={showQuestion}
+          copy={copy}
           onSessionChange={onSessionChange}
         />
       );
@@ -460,6 +488,7 @@ function InteractionBlockView({
           block={block}
           session={session}
           showQuestion={showQuestion}
+          copy={copy}
           onSessionChange={onSessionChange}
         />
       );
@@ -468,8 +497,10 @@ function InteractionBlockView({
 
 function ConfidenceView({
   confidence,
+  copy,
 }: {
   confidence: LearningCanvasState["board"]["confidence"];
+  copy: LearningCanvasCopy;
 }) {
   const percent =
     typeof confidence.value === "number"
@@ -479,16 +510,18 @@ function ConfidenceView({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
-        <span className="font-medium capitalize">{confidence.status}</span>
+        <span className="font-medium">
+          {copy.confidenceLabels[confidence.status]}
+        </span>
         {percent !== null ? (
           <span className="text-xs text-muted-foreground">{percent}%</span>
         ) : null}
       </div>
       {percent !== null ? (
         <div
-          className="h-2 rounded-full bg-muted"
+          className="h-1.5 overflow-hidden rounded-full bg-muted"
           role="meter"
-          aria-label="Confidence"
+          aria-label={copy.confidence}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
@@ -506,18 +539,299 @@ function ConfidenceView({
   );
 }
 
+function ProgressSummary({
+  presentation,
+}: {
+  presentation: LearningCanvasPresentation;
+}) {
+  const { progress, copy } = presentation;
+  const percent =
+    progress.total === 0 ? 0 : (progress.completed / progress.total) * 100;
+
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>{progress.label}</span>
+        <span>{progress.completed}/{progress.total}</span>
+      </div>
+      <div
+        className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-label={copy.learningProgress}
+        aria-valuemin={0}
+        aria-valuemax={progress.total}
+        aria-valuenow={progress.completed}
+      >
+        <div
+          className="h-full rounded-full bg-primary transition-[width]"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ProgressList({
+  state,
+  presentation,
+}: {
+  state: LearningCanvasState;
+  presentation: LearningCanvasPresentation;
+}) {
+  const { copy } = presentation;
+
+  return (
+    <>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <NotebookText
+            className="size-4 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <h2 className="text-sm font-semibold">{copy.learningProgress}</h2>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {presentation.progress.countLabel}
+        </span>
+      </div>
+      <ProgressSummary presentation={presentation} />
+      <ol className="mt-4 divide-y divide-border/60">
+        {state.timeline.map((item) => (
+          <li key={item.id} className="py-3 first:pt-0 last:pb-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">
+                  {copy.kindLabels[item.kind]}
+                </p>
+                <h3 className="mt-0.5 text-sm font-medium leading-5">
+                  {item.title}
+                </h3>
+              </div>
+              <StatusPill status={item.status} copy={copy} />
+            </div>
+            {item.summary ? (
+              <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                {item.summary}
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+      <p className="mt-4 border-t border-border/60 pt-3 text-xs leading-5 text-muted-foreground">
+        {copy.rhythm}
+      </p>
+    </>
+  );
+}
+
+function DisclosureSummary({
+  title,
+  copy,
+}: {
+  title: string;
+  copy: LearningCanvasCopy;
+}) {
+  return (
+    <summary
+      className={`flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden ${focusRingClassName}`}
+    >
+      <span>{title}</span>
+      <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+        <span className="group-open:hidden">{copy.viewDetails}</span>
+        <span className="hidden group-open:inline">{copy.hideDetails}</span>
+        <ChevronDown
+          className="size-4 transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        />
+      </span>
+    </summary>
+  );
+}
+
+function ReflectionDisclosure({
+  state,
+  presentation,
+}: {
+  state: LearningCanvasState;
+  presentation: LearningCanvasPresentation;
+}) {
+  const { copy, roles } = presentation;
+
+  return (
+    <details
+      className="group rounded-xl bg-muted/35"
+      open={roles.reflection === "primary" || undefined}
+    >
+      <DisclosureSummary title={copy.reflectionAndContext} copy={copy} />
+      <div className="grid gap-5 border-t border-border/60 px-4 py-4">
+        {roles.currentKnot !== "primary" ? (
+          <section>
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <CircleHelp className="size-4" aria-hidden="true" />
+              <h3>{copy.currentKnot}</h3>
+            </div>
+            <p className="text-sm leading-6 text-foreground">
+              {state.board.currentKnot}
+            </p>
+          </section>
+        ) : null}
+        <section>
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <UserRoundCheck className="size-4" aria-hidden="true" />
+            <h3>{copy.userVersion}</h3>
+          </div>
+          <p className="text-sm leading-6 text-foreground">
+            {state.board.userVersion ?? (
+              <span className="text-muted-foreground">
+                {copy.noUserVersion}
+              </span>
+            )}
+          </p>
+        </section>
+        <section>
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <BadgeCheck className="size-4" aria-hidden="true" />
+            <h3>{copy.confidenceStatus}</h3>
+          </div>
+          <div className="text-sm leading-6 text-foreground">
+            <ConfidenceView
+              confidence={state.board.confidence}
+              copy={copy}
+            />
+          </div>
+        </section>
+      </div>
+    </details>
+  );
+}
+
+function ActiveWorkspace({
+  session,
+  presentation,
+  onSessionChange,
+}: {
+  session: LearningSession;
+  presentation: LearningCanvasPresentation;
+  onSessionChange: (session: LearningSession) => void;
+}) {
+  const state = session.state;
+  const { copy, roles, density } = presentation;
+  const sectionGap = density === "compact" ? "gap-3" : "gap-4";
+
+  return (
+    <section
+      aria-labelledby="learning-board-heading"
+      className={`min-w-0 grid ${sectionGap}`}
+    >
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {copy.currentMicroturn}
+          </p>
+          <h2
+            id="learning-board-heading"
+            className="mt-0.5 text-lg font-semibold text-foreground"
+          >
+            {copy.tinyIdea}
+          </h2>
+        </div>
+        <span className="rounded-full bg-muted/70 px-2.5 py-1 text-xs text-muted-foreground">
+          {copy.oneIdeaOneCheck}
+        </span>
+      </div>
+
+      {roles.currentKnot === "primary" ? (
+        <section className="rounded-2xl bg-muted/40 p-4">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <CircleHelp className="size-4" aria-hidden="true" />
+            <h3>{copy.currentKnot}</h3>
+          </div>
+          <p className="text-sm leading-6 text-foreground">
+            {state.board.currentKnot}
+          </p>
+        </section>
+      ) : null}
+
+      {roles.tinyIdea !== "hidden" ? (
+        <section className="rounded-2xl bg-muted/40 p-4">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
+            <Lightbulb className="size-4" aria-hidden="true" />
+            <h3>{copy.tinyIdea}</h3>
+          </div>
+          <p className="text-base font-medium leading-7 text-foreground">
+            {state.board.tinyCoreIdea}
+          </p>
+          {roles.example === "primary" ? (
+            <div className="mt-4 border-t border-border/60 pt-4">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <PanelsTopLeft className="size-4" aria-hidden="true" />
+                <h3>{copy.oneExample}</h3>
+              </div>
+              <div className="text-sm leading-6 text-foreground">
+                <ExampleBlockView
+                  example={state.board.exampleBlock}
+                  copy={copy}
+                />
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {roles.tinyIdea === "hidden" && roles.currentKnot !== "primary" ? (
+        <p className="rounded-xl bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          {copy.waitingForIdea}
+        </p>
+      ) : null}
+
+      <section
+        aria-labelledby="current-check-heading"
+        className="rounded-2xl bg-primary/8 p-5 ring-1 ring-primary/30 shadow-sm"
+      >
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
+          <MessageCircleQuestion className="size-4" aria-hidden="true" />
+          <span>{copy.nextStep}</span>
+        </div>
+        <h3
+          id="current-check-heading"
+          className="mt-2 text-xl font-semibold text-foreground"
+        >
+          {copy.yourCheck}
+        </h3>
+        <p className="mt-2 text-base font-medium leading-7 text-foreground">
+          {state.board.checkQuestion ?? (
+            <span className="text-muted-foreground">{copy.noCheck}</span>
+          )}
+        </p>
+        {state.board.interactionBlock ? (
+          <InteractionBlockView
+            block={state.board.interactionBlock}
+            session={session}
+            copy={copy}
+            onSessionChange={onSessionChange}
+          />
+        ) : null}
+      </section>
+
+      <ReflectionDisclosure state={state} presentation={presentation} />
+    </section>
+  );
+}
+
 export default function LearningCanvas() {
   const { theme, maxHeight, safeArea } = useLayout();
+  const { locale: hostLocale } = useUser();
   const [displayMode, requestDisplayMode] = useDisplayMode();
   const { output } = useToolInfo<"start_learning_canvas">();
   const { callToolAsync: readSession } = useCallTool(
     "read_learning_session",
   );
   const adaptor = getAdaptor();
+  const { containerRef, containerWidth } = useContainerWidth();
   const [session, setSession] = useState<LearningSession | null>(
     output?.session ?? null,
   );
-  const [presentation, setPresentation] =
+  const [mountedPresentation, setMountedPresentation] =
     useState<MountedPresentationState>(() =>
       createMountedPresentationState(output?.session.revision ?? 1),
     );
@@ -533,15 +847,37 @@ export default function LearningCanvas() {
   }, [output?.session]);
 
   useEffect(() => {
-    void adaptor.setViewState({ presentation }).catch(() => undefined);
-  }, [adaptor, presentation]);
+    void adaptor
+      .setViewState({ presentation: mountedPresentation })
+      .catch(() => undefined);
+  }, [adaptor, mountedPresentation]);
+
+  const layout = deriveLearningShellLayout({
+    displayMode,
+    maxHeight,
+    safeAreaInsets: safeArea?.insets,
+  });
+  const fallbackLocale = hostLocale.toLowerCase().startsWith("de")
+    ? "de"
+    : "en";
+  const fallbackCopy = getLearningCanvasCopy(fallbackLocale);
+  const presentation = session
+    ? deriveLearningCanvasPresentation({
+        state: session.state,
+        mode: layout.mode,
+        containerWidth,
+        availableHeight: layout.availableHeight,
+        hostLocale,
+      })
+    : null;
+  const copy = presentation?.copy ?? fallbackCopy;
 
   const requestMode = async (requestedMode: RequestedDisplayMode) => {
-    if (presentation.modeRequestStatus === "pending") {
+    if (mountedPresentation.modeRequestStatus === "pending") {
       return;
     }
 
-    setPresentation((current) =>
+    setMountedPresentation((current) =>
       beginDisplayModeRequest(current, requestedMode),
     );
 
@@ -549,23 +885,15 @@ export default function LearningCanvas() {
       const result = await requestDisplayMode(requestedMode);
 
       if (result.mode !== requestedMode) {
-        throw new Error(
-          `The host stayed in ${result.mode} mode instead of ${requestedMode}.`,
-        );
+        throw new Error(copy.modeError);
       }
 
-      setPresentation((current) =>
+      setMountedPresentation((current) =>
         completeDisplayModeRequest(current, requestedMode),
       );
-    } catch (error) {
-      const detail =
-        error instanceof Error ? ` ${error.message}` : "";
-
-      setPresentation((current) =>
-        failDisplayModeRequest(
-          current,
-          `The host could not open ${requestedMode} mode. You can keep using this view and try again.${detail}`,
-        ),
+    } catch {
+      setMountedPresentation((current) =>
+        failDisplayModeRequest(current, copy.modeError),
       );
     }
   };
@@ -576,132 +904,139 @@ export default function LearningCanvas() {
         ? reconcileLearningSession(mountedSession, incomingSession).session
         : incomingSession,
     );
-    setPresentation((current) =>
+    setMountedPresentation((current) =>
       completeSessionSynchronization(current, incomingSession.revision),
     );
   };
 
   const refreshLatest = async () => {
-    if (!session || presentation.synchronizationStatus === "refreshing") {
+    if (
+      !session ||
+      mountedPresentation.synchronizationStatus === "refreshing"
+    ) {
       return;
     }
 
-    setPresentation((current) => beginSessionRefresh(current));
+    setMountedPresentation((current) => beginSessionRefresh(current));
 
     try {
       const response = await readSession({ sessionId: session.sessionId });
       const result = response.structuredContent.result;
 
       if (response.isError || result.status !== "ok") {
-        throw new Error(
-          result.status === "not_found"
-            ? result.error.message
-            : "The latest session could not be read.",
-        );
+        throw new Error(copy.synchronizationError);
       }
 
       const reconciliation = reconcileLearningSession(session, result.session);
 
       if (reconciliation.reason === "different-session") {
-        throw new Error(
-          "The refreshed result belongs to a different learning session.",
-        );
+        throw new Error(copy.differentSessionError);
       }
 
       setSession(reconciliation.session);
-      setPresentation((current) =>
+      setMountedPresentation((current) =>
         completeSessionSynchronization(
           current,
           reconciliation.session.revision,
         ),
       );
     } catch (error) {
-      setPresentation((current) =>
+      setMountedPresentation((current) =>
         failSessionSynchronization(
           current,
           error instanceof Error
             ? error.message
-            : "The latest session could not be read.",
+            : copy.synchronizationError,
         ),
       );
     }
   };
 
-  const layout = deriveLearningShellLayout({
-    displayMode,
-    maxHeight,
-    safeAreaInsets: safeArea?.insets,
-  });
   const shellStyle: CSSProperties = {
     maxHeight:
       layout.maxHeight === undefined ? undefined : `${layout.maxHeight}px`,
     paddingTop: `${layout.safeAreaInsets.top + 16}px`,
     paddingRight: `${layout.safeAreaInsets.right + 16}px`,
-    paddingBottom: `${layout.safeAreaInsets.bottom + 16}px`,
+    paddingBottom: `${layout.safeAreaInsets.bottom + 20}px`,
     paddingLeft: `${layout.safeAreaInsets.left + 16}px`,
   };
-  const state = session?.state;
+  const rootClassName = `${theme === "dark" ? "dark" : ""} mx-auto box-border w-full overflow-x-hidden bg-transparent font-sans text-foreground`;
 
-  if (!session || !state) {
+  if (!session || !presentation) {
     return (
       <main
-        className={`${theme === "dark" ? "dark" : ""} mx-auto box-border w-full max-w-5xl overflow-hidden bg-background text-foreground`}
+        ref={containerRef}
+        lang={fallbackLocale}
+        className={`${rootClassName} max-w-5xl overflow-hidden`}
         style={shellStyle}
       >
-        <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-          No learning canvas state was returned by the tool.
+        <p className="rounded-xl bg-muted/40 p-4 text-sm text-muted-foreground">
+          {copy.noCanvasState}
         </p>
       </main>
     );
   }
 
-  const viewModel = deriveLearningShellViewModel({
-    session,
-    mode: layout.mode,
-  });
+  const state = session.state;
   const presentationMessage =
-    presentation.recoverableError?.message ?? layout.fallbackMessage;
-  const modeRequestPending = presentation.modeRequestStatus === "pending";
+    mountedPresentation.recoverableError?.message ??
+    (layout.fallbackMessage ? copy.modeError : null);
+  const modeRequestPending =
+    mountedPresentation.modeRequestStatus === "pending";
   const refreshPending =
-    presentation.synchronizationStatus === "refreshing";
-  const modeButtonClassName =
-    "inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:border-primary/50 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-wait disabled:opacity-60";
+    mountedPresentation.synchronizationStatus === "refreshing";
 
-  if (viewModel.mode === "inline") {
+  if (layout.mode === "inline") {
     return (
       <main
-        className={`${theme === "dark" ? "dark" : ""} mx-auto box-border w-full max-w-2xl overflow-hidden bg-background text-foreground`}
+        ref={containerRef}
+        lang={presentation.locale}
+        className={`${rootClassName} max-w-2xl overflow-hidden`}
         style={shellStyle}
         data-llm={`Learning session ${session.sessionId}, revision ${session.revision}. Inline launcher for ${state.topic}.`}
       >
-        <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <section className="rounded-2xl bg-card/90 p-4 ring-1 ring-border/60 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-                Make It Click session
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {copy.sessionEyebrow}
               </p>
               <h1 className="mt-1 truncate text-lg font-semibold text-foreground">
-                {viewModel.topic}
+                {state.topic}
               </h1>
             </div>
-            <span className="shrink-0 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground">
-              {viewModel.progressLabel}
+            <span className="shrink-0 rounded-full bg-muted/70 px-2.5 py-1 text-xs text-muted-foreground">
+              {presentation.progress.label}
             </span>
           </div>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {viewModel.revisionLabel} · Open the focused workspace to continue
-            this learning session.
-          </p>
-          <button
-            type="button"
-            aria-label="Open learning canvas in fullscreen"
-            disabled={modeRequestPending}
-            onClick={() => void requestMode("fullscreen")}
-            className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-wait disabled:opacity-60 sm:w-auto"
-          >
-            <Maximize2 className="size-4" aria-hidden="true" />
-            {modeRequestPending ? "Opening canvas..." : "Open learning canvas"}
-          </button>
+          <div className="mt-3 rounded-xl bg-muted/35 px-3 py-2.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              {presentation.currentStep.label}
+            </p>
+            <p className="mt-1 line-clamp-2 text-sm font-medium leading-6">
+              {presentation.currentStep.text}
+            </p>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              aria-label={copy.openLearningCanvas}
+              disabled={modeRequestPending}
+              onClick={() => void requestMode("fullscreen")}
+              className={`inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 ${focusRingClassName} disabled:cursor-wait disabled:opacity-60`}
+            >
+              <Maximize2 className="size-4" aria-hidden="true" />
+              {modeRequestPending
+                ? copy.openingCanvas
+                : copy.openLearningCanvas}
+            </button>
+            <span className="text-xs text-muted-foreground">
+              {copy.revision} {session.revision}
+            </span>
+          </div>
+          <div className="sr-only" aria-live="polite">
+            {modeRequestPending ? copy.openingCanvas : ""}
+          </div>
           {presentationMessage ? (
             <p
               className="mt-3 text-sm text-rose-700 dark:text-rose-300"
@@ -715,60 +1050,65 @@ export default function LearningCanvas() {
     );
   }
 
-  if (viewModel.mode === "pip") {
+  if (layout.mode === "pip") {
     return (
       <main
-        className={`${theme === "dark" ? "dark" : ""} mx-auto box-border w-full max-w-xl overflow-hidden bg-background text-foreground`}
+        ref={containerRef}
+        lang={presentation.locale}
+        className={`${rootClassName} max-w-xl overflow-hidden`}
         style={shellStyle}
-        data-llm={`Learning session ${session.sessionId}, revision ${session.revision}. PiP companion showing ${viewModel.currentStepLabel.toLowerCase()}.`}
+        data-llm={`Learning session ${session.sessionId}, revision ${session.revision}. PiP companion showing the current question.`}
       >
-        <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <section className="rounded-2xl bg-card/90 p-4 ring-1 ring-border/60 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-                Current step
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {copy.currentStep}
               </p>
-              <h1 className="mt-1 truncate text-base font-semibold text-foreground">
-                {viewModel.topic}
+              <h1 className="mt-1 truncate text-base font-semibold">
+                {state.topic}
               </h1>
             </div>
             <span className="shrink-0 text-xs text-muted-foreground">
-              {viewModel.progressLabel}
+              {presentation.progress.label}
             </span>
           </div>
-          <div className="mt-3 border-t border-border pt-3">
-            <p className="text-xs font-semibold uppercase tracking-normal text-primary">
-              {viewModel.currentStepLabel}
+          <div className="mt-3 rounded-xl bg-primary/8 px-3 py-3 ring-1 ring-primary/20">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              {presentation.currentStep.label}
             </p>
-            <p className="mt-1 line-clamp-3 text-sm font-medium leading-6 text-foreground">
-              {viewModel.currentStepText}
+            <p className="mt-1 line-clamp-3 text-sm font-medium leading-6">
+              {presentation.currentStep.text}
             </p>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
-              aria-label="Return to fullscreen learning canvas"
+              aria-label={copy.returnToFullscreen}
               disabled={modeRequestPending}
               onClick={() => void requestMode("fullscreen")}
               className={modeButtonClassName}
             >
               <Maximize2 className="size-4" aria-hidden="true" />
-              {modeRequestPending ? "Opening..." : "Return to fullscreen"}
+              {modeRequestPending ? copy.opening : copy.returnToFullscreen}
             </button>
             <button
               type="button"
-              aria-label="Refresh latest learning session revision"
+              aria-label={copy.refresh}
               disabled={refreshPending}
               onClick={() => void refreshLatest()}
               className={modeButtonClassName}
             >
               <RefreshCcwDot className="size-4" aria-hidden="true" />
-              {refreshPending ? "Refreshing..." : "Refresh"}
+              {refreshPending ? copy.refreshing : copy.refresh}
             </button>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            {viewModel.revisionLabel}
+            {copy.revision} {session.revision}
           </p>
+          <div className="sr-only" aria-live="polite">
+            {refreshPending ? copy.refreshing : ""}
+          </div>
           {presentationMessage ? (
             <p
               className="mt-2 text-xs text-rose-700 dark:text-rose-300"
@@ -782,67 +1122,90 @@ export default function LearningCanvas() {
     );
   }
 
+  const isWide = presentation.workspaceLayout === "two-region";
+
   return (
     <main
-      className={`${theme === "dark" ? "dark" : ""} mx-auto box-border w-full max-w-6xl overflow-x-hidden overflow-y-auto bg-background text-foreground`}
+      ref={containerRef}
+      lang={presentation.locale}
+      className={`${rootClassName} max-w-7xl overflow-y-auto`}
       style={{
         ...shellStyle,
         height:
           layout.maxHeight === undefined ? "100vh" : `${layout.maxHeight}px`,
+        overscrollBehavior: "contain",
       }}
+      data-layout={presentation.workspaceLayout}
       data-llm={`Learning session ${session.sessionId}, revision ${session.revision}. Current knot: ${state.board.currentKnot}. Check question: ${state.board.checkQuestion ?? "none"}.`}
     >
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-            Make It Click canvas
+      <header
+        className={`mb-5 flex gap-4 border-b border-border/60 pb-4 ${
+          isWide
+            ? "items-start justify-between"
+            : "flex-col items-stretch"
+        }`}
+      >
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {copy.canvasEyebrow}
           </p>
-          <h1 className="text-xl font-semibold leading-7 text-foreground md:text-2xl">
+          <h1 className="mt-0.5 text-2xl font-semibold leading-8 text-foreground">
             {state.topic}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Stay with one small step until it clicks.
+            {copy.focusedWorkspaceHint}
           </p>
         </div>
-        <div className="flex max-w-full flex-col items-end gap-2">
-          <div className="flex flex-wrap justify-end gap-2">
+        <div
+          className={`flex max-w-full flex-col gap-2 ${
+            isWide ? "items-end" : "items-start"
+          }`}
+        >
+          <div className="flex max-w-full flex-wrap gap-2">
             <button
               type="button"
-              aria-label="Open compact picture-in-picture learning companion"
+              aria-label={copy.pictureInPicture}
               disabled={modeRequestPending}
               onClick={() => void requestMode("pip")}
               className={modeButtonClassName}
             >
               <PictureInPicture2 className="size-4" aria-hidden="true" />
-              PiP
+              {copy.pictureInPicture}
             </button>
             <button
               type="button"
-              aria-label="Return learning canvas to inline mode"
+              aria-label={copy.inline}
               disabled={modeRequestPending}
               onClick={() => void requestMode("inline")}
               className={modeButtonClassName}
             >
               <Minimize2 className="size-4" aria-hidden="true" />
-              Inline
+              {copy.inline}
             </button>
             <button
               type="button"
-              aria-label="Refresh latest learning session revision"
+              aria-label={copy.refreshLatest}
               disabled={refreshPending}
               onClick={() => void refreshLatest()}
               className={modeButtonClassName}
             >
               <RefreshCcwDot className="size-4" aria-hidden="true" />
-              {refreshPending ? "Refreshing..." : "Refresh latest"}
+              {refreshPending ? copy.refreshing : copy.refreshLatest}
             </button>
           </div>
           <span className="text-xs text-muted-foreground">
-            Revision {session.revision}
+            {copy.revision} {session.revision}
           </span>
+          <div className="sr-only" aria-live="polite">
+            {modeRequestPending
+              ? copy.opening
+              : refreshPending
+                ? copy.refreshing
+                : ""}
+          </div>
           {presentationMessage ? (
             <span
-              className="max-w-xs text-right text-xs text-rose-700 dark:text-rose-300"
+              className="max-w-sm text-xs text-rose-700 dark:text-rose-300"
               role="alert"
             >
               {presentationMessage}
@@ -851,185 +1214,37 @@ export default function LearningCanvas() {
         </div>
       </header>
 
-      <div className="grid gap-5 md:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.75fr)]">
-        <section aria-labelledby="learning-board-heading" className="min-w-0">
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-                Current microturn
-              </p>
-              <h2
-                id="learning-board-heading"
-                className="text-lg font-semibold text-foreground"
-              >
-                Learning board
-              </h2>
-            </div>
-            <span className="rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground">
-              One idea · one check
-            </span>
-          </div>
+      <div
+        className={`grid gap-5 ${
+          isWide
+            ? "grid-cols-[minmax(0,1fr)_minmax(280px,340px)] items-start"
+            : "grid-cols-1"
+        }`}
+      >
+        <ActiveWorkspace
+          session={session}
+          presentation={presentation}
+          onSessionChange={acceptSessionUpdate}
+        />
 
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm md:p-5">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-                <CircleHelp className="size-4" aria-hidden="true" />
-                <h3>Current knot</h3>
-              </div>
-              <p className="text-sm leading-6 text-foreground">
-                {state.board.currentKnot}
-              </p>
-            </div>
-
-            <div className="mt-4 border-t border-border pt-4">
-              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-                <Lightbulb className="size-4" aria-hidden="true" />
-                <h3>Tiny idea</h3>
-              </div>
-              <p className="text-sm leading-6 text-foreground">
-                {state.board.tinyCoreIdea ?? (
-                  <span className="text-muted-foreground">
-                    Waiting for your answer before choosing the tiny idea.
-                  </span>
-                )}
-              </p>
-            </div>
-
-            {state.board.exampleBlock ? (
-              <div className="mt-4 border-t border-border pt-4">
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-                  <PanelsTopLeft className="size-4" aria-hidden="true" />
-                  <h3>One example</h3>
-                </div>
-                <div className="text-sm leading-6 text-foreground">
-                  <ExampleBlockView example={state.board.exampleBlock} />
-                </div>
-              </div>
-            ) : null}
-          </div>
-
-          <section
-            aria-labelledby="current-check-heading"
-            className={`mt-4 rounded-xl border p-5 shadow-sm md:p-6 ${
-              state.board.checkQuestion
-                ? "border-primary/45 bg-primary/5 dark:border-primary/55 dark:bg-primary/10"
-                : "border-border bg-card"
-            }`}
+        {presentation.roles.progress === "secondary" ? (
+          <aside
+            aria-label={copy.learningProgress}
+            className="rounded-2xl bg-muted/30 p-4"
           >
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-primary">
-              <MessageCircleQuestion className="size-4" aria-hidden="true" />
-              <span>Your next step</span>
-            </div>
-            <h3
-              id="current-check-heading"
-              className="mt-2 text-lg font-semibold text-foreground"
-            >
-              Your check
-            </h3>
-            <p className="mt-2 text-base font-medium leading-7 text-foreground md:text-lg">
-              {state.board.checkQuestion ?? (
-                <span className="text-muted-foreground">
-                  No check question queued.
-                </span>
-              )}
-            </p>
-            {state.board.interactionBlock ? (
-              <InteractionBlockView
-                block={state.board.interactionBlock}
-                session={session}
-                onSessionChange={acceptSessionUpdate}
-              />
-            ) : null}
-          </section>
-
-          <details className="group mt-4 rounded-lg border border-border bg-muted/30">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-4 py-3 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background [&::-webkit-details-marker]:hidden">
-              <span>Reflection &amp; status</span>
-              <span className="text-xs font-normal text-muted-foreground group-open:hidden">
-                View details
-              </span>
-              <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
-                Hide details
-              </span>
-            </summary>
-            <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-2">
-              <section>
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-                  <UserRoundCheck className="size-4" aria-hidden="true" />
-                  <h3>User version</h3>
-                </div>
-                <p className="text-sm leading-6 text-foreground">
-                  {state.board.userVersion ?? (
-                    <span className="text-muted-foreground">
-                      No user version recorded yet.
-                    </span>
-                  )}
-                </p>
-              </section>
-              <section>
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-                  <BadgeCheck className="size-4" aria-hidden="true" />
-                  <h3>Confidence / status</h3>
-                </div>
-                <div className="text-sm leading-6 text-foreground">
-                  <ConfidenceView confidence={state.board.confidence} />
-                </div>
-              </section>
+            <ProgressList state={state} presentation={presentation} />
+          </aside>
+        ) : (
+          <details className="group rounded-xl bg-muted/30">
+            <DisclosureSummary
+              title={`${copy.learningProgress} · ${presentation.progress.label}`}
+              copy={copy}
+            />
+            <div className="border-t border-border/60 px-4 py-4">
+              <ProgressList state={state} presentation={presentation} />
             </div>
           </details>
-        </section>
-
-        <aside
-          aria-labelledby="learning-progress-heading"
-          className="self-start rounded-xl border border-border bg-card p-4 shadow-sm"
-        >
-          <div className="mb-2 flex items-center justify-between gap-3 border-b border-border pb-3">
-            <div className="flex items-center gap-2">
-              <NotebookText
-                className="size-4 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <h2 id="learning-progress-heading" className="text-sm font-semibold">
-                Learning progress
-              </h2>
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {state.timeline.length}{" "}
-              {state.timeline.length === 1 ? "step" : "steps"}
-            </span>
-          </div>
-          <ol className="divide-y divide-border">
-            {state.timeline.map((item) => (
-              <li key={item.id} className="py-3 first:pt-1 last:pb-1">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">
-                      {kindLabels[item.kind]}
-                    </p>
-                    <h3 className="mt-0.5 text-sm font-medium leading-5">
-                      {item.title}
-                    </h3>
-                  </div>
-                  <StatusPill status={item.status} />
-                </div>
-                {item.summary ? (
-                  <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-                    {item.summary}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-          <div className="mt-3 flex items-start gap-2 border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
-            <RefreshCcwDot
-              className="mt-0.5 size-4 shrink-0"
-              aria-hidden="true"
-            />
-            <span>
-              Diagnose → one tiny idea → check → wait.
-            </span>
-          </div>
-        </aside>
+        )}
       </div>
     </main>
   );

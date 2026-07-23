@@ -25,6 +25,15 @@ Use a mode-aware shell around one authoritative learning session:
 - PiP: a compact companion with the topic, current tiny idea or question,
   progress, and a return-to-fullscreen action.
 
+The mounted surface derives its visual hierarchy from the actual widget
+container rather than viewport breakpoints. Wide fullscreen containers use a
+focused learning region plus a subordinate progress rail; narrow fullscreen
+containers use one column and keep progress in a compact disclosure. Inline
+and PiP show the current question with only a minimal progress indicator.
+Diagnostic context and reflection stay disclosed unless they are the active
+task. Interface labels use one controlled German or English copy set selected
+from the session content with the host locale as fallback.
+
 The learning board should make the current model visible without replacing the conversation. The timeline should show progress and uncertainty across microturns.
 
 The learning canvas should feel calm, focused, and inviting. Visual design is

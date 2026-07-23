@@ -44,12 +44,6 @@ const server = new McpServer(
         component: "start-learning-canvas",
         description:
           "A compact Make It Click session launcher that expands into a focused fullscreen learning canvas or a small PiP companion.",
-        csp: {
-          resourceDomains: [
-            "https://fonts.googleapis.com",
-            "https://fonts.gstatic.com",
-          ],
-        },
       },
       outputSchema: learningSessionStartOutputSchema.shape,
       _meta: {
