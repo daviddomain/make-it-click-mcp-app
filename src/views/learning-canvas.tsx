@@ -13,9 +13,9 @@ import {
   UserRoundCheck,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useLayout } from "skybridge/web";
+import { getAdaptor, useLayout } from "skybridge/web";
 
-import { useToolInfo } from "@/helpers.js";
+import { useCallTool, useToolInfo } from "@/helpers.js";
 import type {
   ExampleBlock,
   LearningCanvasState,
@@ -24,6 +24,10 @@ import type {
   MultipleChoiceCheckResult,
   TimelineStatus,
 } from "@/domain/learning-canvas-state.js";
+import {
+  createMultipleChoiceCheckResult,
+  createMultipleChoiceSubmission,
+} from "@/domain/multiple-choice-check.js";
 
 const statusClassNames: Record<TimelineStatus, string> = {
   open: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200",
@@ -127,41 +131,113 @@ function ExampleBlockView({ example }: { example: ExampleBlock | null }) {
 
 function MultipleChoiceCheckView({
   block,
+  state,
 }: {
   block: MultipleChoiceCheckBlock;
+  state: LearningCanvasState;
 }) {
   const [selectedOptionId, setSelectedOptionId] = useState(
     block.selectedOptionId ?? "",
   );
+  const [submissionState, setSubmissionState] = useState<
+    | { status: "idle" }
+    | { status: "pending" }
+    | { status: "success"; result: MultipleChoiceCheckResult }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
+  const { callToolAsync } = useCallTool("update_microturn");
+  const adaptor = getAdaptor();
 
   useEffect(() => {
     setSelectedOptionId(block.selectedOptionId ?? "");
+    setSubmissionState({ status: "idle" });
   }, [block.id, block.selectedOptionId]);
 
-  const selectedOption = useMemo(
-    () => block.options.find((option) => option.id === selectedOptionId),
-    [block.options, selectedOptionId],
-  );
+  const interactionResult = useMemo(() => {
+    if (!selectedOptionId) {
+      return null;
+    }
 
-  const interactionResult: MultipleChoiceCheckResult | null = selectedOption
-    ? {
-        type: "MultipleChoiceCheck",
-        blockId: block.id,
-        question: block.question,
-        selectedOptionId: selectedOption.id,
-        selectedValue: selectedOption.value,
-        selectedLabel: selectedOption.label,
+    try {
+      return createMultipleChoiceCheckResult(block, selectedOptionId);
+    } catch {
+      return null;
+    }
+  }, [block, selectedOptionId]);
+
+  const isPending = submissionState.status === "pending";
+
+  const interactionDescription = (() => {
+    if (submissionState.status === "success") {
+      return `MultipleChoiceCheck submitted: ${JSON.stringify(submissionState.result)}`;
+    }
+
+    if (submissionState.status === "error" && interactionResult) {
+      return `MultipleChoiceCheck submission failed; selection retained: ${JSON.stringify(interactionResult)}`;
+    }
+
+    if (isPending && interactionResult) {
+      return `MultipleChoiceCheck submission pending: ${JSON.stringify(interactionResult)}`;
+    }
+
+    return interactionResult
+      ? `MultipleChoiceCheck selected but not submitted: ${JSON.stringify(interactionResult)}`
+      : "MultipleChoiceCheck waiting for one selected option.";
+  })();
+
+  const handleOptionSelection = (optionId: string) => {
+    if (isPending) {
+      return;
+    }
+
+    setSelectedOptionId(optionId);
+    setSubmissionState({ status: "idle" });
+  };
+
+  const handleSubmit = async () => {
+    if (!interactionResult || isPending) {
+      return;
+    }
+
+    setSubmissionState({ status: "pending" });
+
+    try {
+      const response = await callToolAsync(
+        createMultipleChoiceSubmission(
+          state,
+          block,
+          interactionResult.selectedOptionId,
+        ),
+      );
+      const submittedResult = response.structuredContent.interactionResult;
+
+      if (
+        response.isError ||
+        !submittedResult ||
+        submittedResult.blockId !== interactionResult.blockId ||
+        submittedResult.selectedOptionId !==
+          interactionResult.selectedOptionId
+      ) {
+        throw new Error("The submitted result was not confirmed.");
       }
-    : null;
+
+      await adaptor.setViewState({
+        state: response.structuredContent.state,
+        interactionResult: submittedResult,
+      });
+      setSubmissionState({ status: "success", result: submittedResult });
+    } catch {
+      setSubmissionState({
+        status: "error",
+        message: "The answer could not be submitted. Please try again.",
+      });
+    }
+  };
 
   return (
     <div
       className="mt-4 rounded-md border border-primary/25 bg-background p-3"
-      data-llm={
-        interactionResult
-          ? `MultipleChoiceCheck selected: ${JSON.stringify(interactionResult)}`
-          : "MultipleChoiceCheck waiting for one selected option."
-      }
+      data-llm={interactionDescription}
     >
       <p className="text-sm font-semibold leading-6">{block.question}</p>
       <div
@@ -178,12 +254,13 @@ function MultipleChoiceCheckView({
               type="button"
               role="radio"
               aria-checked={isSelected}
-              onClick={() => setSelectedOptionId(option.id)}
+              disabled={isPending}
+              onClick={() => handleOptionSelection(option.id)}
               className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition ${
                 isSelected
                   ? "border-primary bg-primary/10 text-foreground"
                   : "border-border bg-card text-foreground hover:border-primary/50 hover:bg-muted/60"
-              }`}
+              } disabled:cursor-wait disabled:opacity-70`}
             >
               <span>{option.label}</span>
               {isSelected ? (
@@ -201,6 +278,26 @@ function MultipleChoiceCheckView({
           Selected: {interactionResult.selectedLabel}
         </p>
       ) : null}
+      <button
+        type="button"
+        disabled={!interactionResult || isPending}
+        onClick={handleSubmit}
+        className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {isPending ? "Submitting answer..." : "Submit answer"}
+      </button>
+      <div className="mt-2 min-h-5 text-xs" aria-live="polite">
+        {submissionState.status === "success" ? (
+          <p className="text-emerald-700 dark:text-emerald-300">
+            Answer submitted. The coach can use the structured result.
+          </p>
+        ) : null}
+        {submissionState.status === "error" ? (
+          <p className="text-rose-700 dark:text-rose-300" role="alert">
+            {submissionState.message}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -308,7 +405,10 @@ export default function LearningCanvas() {
                 )}
               </p>
               {state.board.interactionBlock?.type === "MultipleChoiceCheck" ? (
-                <MultipleChoiceCheckView block={state.board.interactionBlock} />
+                <MultipleChoiceCheckView
+                  block={state.board.interactionBlock}
+                  state={state}
+                />
               ) : null}
             </FieldCard>
           </div>

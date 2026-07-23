@@ -6,6 +6,7 @@ import { createInitialLearningCanvasState } from "@/domain/start-learning-canvas
 import {
   applyMicroturnUpdate,
   updateMicroturnInputShape,
+  updateMicroturnOutputSchema,
 } from "@/domain/update-microturn.js";
 
 const server = new McpServer(
@@ -86,6 +87,7 @@ const server = new McpServer(
           "Optional next microturn. Include only one tiny idea, at most one example, and exactly one check question.",
         ),
       },
+      outputSchema: updateMicroturnOutputSchema.shape,
       view: {
         component: "update-learning-canvas",
         description: "Make It Click learning canvas",
@@ -99,9 +101,13 @@ const server = new McpServer(
     },
     async (input) => {
       const state = applyMicroturnUpdate(input);
+      const output = updateMicroturnOutputSchema.parse({
+        state,
+        interactionResult: input.interactionResult ?? null,
+      });
 
       return {
-        structuredContent: { state },
+        structuredContent: output,
         content: [
           {
             type: "text",

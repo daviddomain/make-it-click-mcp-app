@@ -4,7 +4,12 @@ import test from "node:test";
 import {
   learningCanvasStateSchema,
   multipleChoiceCheckResultSchema,
+  type MultipleChoiceCheckBlock,
 } from "./learning-canvas-state.js";
+import {
+  createMultipleChoiceCheckResult,
+  createMultipleChoiceSubmission,
+} from "./multiple-choice-check.js";
 import { createInitialLearningCanvasState } from "./start-learning-canvas.js";
 import { applyMicroturnUpdate } from "./update-microturn.js";
 
@@ -14,6 +19,26 @@ function createDiagnosticState() {
     confusion: "I cannot tell when queued callbacks run.",
     context: "I know synchronous JavaScript runs first.",
   });
+}
+
+function createMultipleChoiceBlock(): MultipleChoiceCheckBlock {
+  return {
+    type: "MultipleChoiceCheck",
+    id: "event-loop-order",
+    question: "What runs next?",
+    options: [
+      {
+        id: "sync",
+        label: "The next synchronous statement",
+        value: "synchronous statement",
+      },
+      {
+        id: "timer",
+        label: "The timer callback",
+        value: "timer callback",
+      },
+    ],
+  };
 }
 
 test("starts with the supplied topic, confusion knot, check, and an open diagnosis", () => {
@@ -97,6 +122,56 @@ test("records a structured interaction result as an understood user signal", () 
   assert.match(
     updatedState.timeline[0]?.summary ?? "",
     /selectedOptionId: timer/,
+  );
+});
+
+test("derives the canonical multiple-choice result from an existing option", () => {
+  const result = createMultipleChoiceCheckResult(
+    createMultipleChoiceBlock(),
+    "timer",
+  );
+
+  assert.deepEqual(result, {
+    type: "MultipleChoiceCheck",
+    blockId: "event-loop-order",
+    question: "What runs next?",
+    selectedOptionId: "timer",
+    selectedValue: "timer callback",
+    selectedLabel: "The timer callback",
+  });
+});
+
+test("rejects a multiple-choice result for an option outside the block", () => {
+  assert.throws(
+    () =>
+      createMultipleChoiceCheckResult(
+        createMultipleChoiceBlock(),
+        "missing-option",
+      ),
+    /Cannot submit unknown option "missing-option"/,
+  );
+});
+
+test("creates an exact typed submission without grading or advancing", () => {
+  const state = createDiagnosticState();
+  state.board.interactionBlock = createMultipleChoiceBlock();
+  const submission = createMultipleChoiceSubmission(
+    state,
+    state.board.interactionBlock,
+    "timer",
+  );
+
+  assert.deepEqual(Object.keys(submission), ["state", "interactionResult"]);
+  assert.strictEqual(submission.state, state);
+
+  const updatedState = applyMicroturnUpdate(submission);
+
+  assert.equal(updatedState.timeline.length, state.timeline.length);
+  assert.equal(updatedState.timeline[0]?.status, "open");
+  assert.deepEqual(updatedState.board.confidence, state.board.confidence);
+  assert.equal(
+    updatedState.board.userVersion,
+    "type: MultipleChoiceCheck; blockId: event-loop-order; question: What runs next?; selectedOptionId: timer; selectedValue: timer callback; selectedLabel: The timer callback",
   );
 });
 

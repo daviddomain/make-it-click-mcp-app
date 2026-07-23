@@ -6,6 +6,7 @@ import {
   interactionBlockSchema,
   learningCanvasStateSchema,
   microturnKindSchema,
+  multipleChoiceCheckResultSchema,
   type LearningCanvasState,
   type MicroturnKind,
 } from "./learning-canvas-state.js";
@@ -31,7 +32,7 @@ export const nextMicroturnInputSchema = z.object({
 const updateMicroturnInputBaseSchema = z.object({
   state: learningCanvasStateSchema,
   userAnswer: z.string().trim().min(1).optional(),
-  interactionResult: z.record(z.string(), z.unknown()).optional(),
+  interactionResult: multipleChoiceCheckResultSchema.optional(),
   timelineStatus: completedTimelineStatusSchema.optional(),
   nextMicroturn: nextMicroturnInputSchema.optional(),
 });
@@ -48,6 +49,15 @@ export const updateMicroturnInputSchema = updateMicroturnInputBaseSchema.refine(
 );
 
 export type UpdateMicroturnInput = z.infer<typeof updateMicroturnInputSchema>;
+
+export const updateMicroturnOutputSchema = z.object({
+  state: learningCanvasStateSchema,
+  interactionResult: multipleChoiceCheckResultSchema.nullable(),
+});
+
+export type UpdateMicroturnOutput = z.infer<
+  typeof updateMicroturnOutputSchema
+>;
 
 function formatInteractionResult(
   interactionResult: UpdateMicroturnInput["interactionResult"],
@@ -115,7 +125,8 @@ export function applyMicroturnUpdate(
     nextMicroturn,
   } = updateMicroturnInputSchema.parse(input);
   const userSignal = summarizeUserSignal({ userAnswer, interactionResult });
-  const resolvedTimelineStatus = timelineStatus ?? "uncertain";
+  const resolvedTimelineStatus =
+    timelineStatus ?? (interactionResult ? null : "uncertain");
   const timeline = state.timeline.map((item) => ({ ...item }));
   const latestOpenIndex = findLatestOpenTimelineIndex(timeline);
   const statusIndex =
@@ -125,7 +136,8 @@ export function applyMicroturnUpdate(
     const currentSummary = timeline[statusIndex]?.summary;
     timeline[statusIndex] = {
       ...timeline[statusIndex],
-      status: resolvedTimelineStatus,
+      status:
+        resolvedTimelineStatus ?? timeline[statusIndex]?.status ?? "open",
       summary: userSignal
         ? `User signal: ${userSignal}`
         : currentSummary ?? "Updated after the user's latest signal.",
@@ -135,13 +147,15 @@ export function applyMicroturnUpdate(
   const board: LearningCanvasState["board"] = {
     ...state.board,
     userVersion: userSignal ?? state.board.userVersion,
-    confidence: {
-      status: inferConfidenceStatus(resolvedTimelineStatus),
-      value: state.board.confidence.value,
-      note: userSignal
-        ? `Latest user signal recorded as ${resolvedTimelineStatus}.`
-        : state.board.confidence.note,
-    },
+    confidence: resolvedTimelineStatus
+      ? {
+          status: inferConfidenceStatus(resolvedTimelineStatus),
+          value: state.board.confidence.value,
+          note: userSignal
+            ? `Latest user signal recorded as ${resolvedTimelineStatus}.`
+            : state.board.confidence.note,
+        }
+      : state.board.confidence,
   };
 
   if (nextMicroturn) {
