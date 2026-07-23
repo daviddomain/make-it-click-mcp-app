@@ -42,7 +42,8 @@ const server = new McpServer(
       },
       view: {
         component: "start-learning-canvas",
-        description: "Make It Click learning canvas",
+        description:
+          "A compact Make It Click session launcher that expands into a focused fullscreen learning canvas or a small PiP companion.",
         csp: {
           resourceDomains: [
             "https://fonts.googleapis.com",
@@ -53,6 +54,8 @@ const server = new McpServer(
       outputSchema: learningSessionStartOutputSchema.shape,
       _meta: {
         "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "Opening learning canvas…",
+        "openai/toolInvocation/invoked": "Learning canvas ready",
         ui: { visibility: ["model", "app"] },
       },
     },
@@ -69,7 +72,7 @@ const server = new McpServer(
         content: [
           {
             type: "text",
-            text: `Opened learning session ${session.sessionId} at revision ${session.revision}.`,
+            text: "Learning canvas ready.",
           },
         ],
         isError: false,
@@ -107,6 +110,8 @@ const server = new McpServer(
       outputSchema: learningSessionUpdateOutputSchema.shape,
       _meta: {
         "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "Updating learning session…",
+        "openai/toolInvocation/invoked": "Learning session updated",
         ui: { visibility: ["model", "app"] },
       },
     },
@@ -114,7 +119,7 @@ const server = new McpServer(
       const result = learningSessions.update(input);
       const text =
         result.status === "ok"
-          ? `Learning session ${result.session.sessionId} reached revision ${result.session.revision}.`
+          ? `Session updated to revision ${result.session.revision}.`
           : result.error.message;
 
       return {
@@ -136,6 +141,8 @@ const server = new McpServer(
       outputSchema: learningSessionReadOutputSchema.shape,
       _meta: {
         "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "Refreshing learning session…",
+        "openai/toolInvocation/invoked": "Learning session refreshed",
         ui: { visibility: ["app"] },
       },
     },

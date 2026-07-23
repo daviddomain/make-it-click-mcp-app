@@ -5,14 +5,22 @@ import {
   CheckCircle2,
   CircleHelp,
   Lightbulb,
+  Maximize2,
   MessageCircleQuestion,
+  Minimize2,
   NotebookText,
   PanelsTopLeft,
+  PictureInPicture2,
   RefreshCcwDot,
   UserRoundCheck,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { getAdaptor, useLayout } from "skybridge/web";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
+import { getAdaptor, useDisplayMode, useLayout } from "skybridge/web";
 
 import { useCallTool, useToolInfo } from "@/helpers.js";
 import { ConfidenceSliderControl } from "@/components/confidence-slider-control.js";
@@ -31,6 +39,20 @@ import type {
   MultipleChoiceCheckResult,
   TimelineStatus,
 } from "@/domain/learning-canvas-state.js";
+import {
+  beginDisplayModeRequest,
+  beginSessionRefresh,
+  completeDisplayModeRequest,
+  completeSessionSynchronization,
+  createMountedPresentationState,
+  deriveLearningShellLayout,
+  deriveLearningShellViewModel,
+  failDisplayModeRequest,
+  failSessionSynchronization,
+  reconcileLearningSession,
+  type MountedPresentationState,
+  type RequestedDisplayMode,
+} from "@/domain/learning-shell.js";
 import type { LearningSession } from "@/domain/learning-session.js";
 import { createMultipleChoiceCheckResult } from "@/domain/multiple-choice-check.js";
 
@@ -122,7 +144,6 @@ function MultipleChoiceCheckView({
     | { status: "error"; message: string }
   >({ status: "idle" });
   const { callToolAsync } = useCallTool("update_microturn");
-  const adaptor = getAdaptor();
 
   useEffect(() => {
     setSelectedOptionId(block.selectedOptionId ?? "");
@@ -202,10 +223,6 @@ function MultipleChoiceCheckView({
         throw new Error("The submitted result was not confirmed.");
       }
 
-      await adaptor.setViewState({
-        session: result.session,
-        interactionResult: submittedResult,
-      });
       onSessionChange(result.session);
       setSubmissionState({ status: "success", result: submittedResult });
     } catch (error) {
@@ -309,7 +326,6 @@ function ConfidenceSliderView({
     | { status: "error"; message: string }
   >({ status: "idle" });
   const { callToolAsync } = useCallTool("update_microturn");
-  const adaptor = getAdaptor();
 
   useEffect(() => {
     setValue(block.value);
@@ -378,10 +394,6 @@ function ConfidenceSliderView({
         throw new Error("The submitted result was not confirmed.");
       }
 
-      await adaptor.setViewState({
-        session: result.session,
-        interactionResult: submittedResult,
-      });
       onSessionChange(result.session);
       setSubmissionState({ status: "success", result: submittedResult });
     } catch (error) {
@@ -495,7 +507,8 @@ function ConfidenceView({
 }
 
 export default function LearningCanvas() {
-  const { theme } = useLayout();
+  const { theme, maxHeight, safeArea } = useLayout();
+  const [displayMode, requestDisplayMode] = useDisplayMode();
   const { output } = useToolInfo<"start_learning_canvas">();
   const { callToolAsync: readSession } = useCallTool(
     "read_learning_session",
@@ -504,25 +517,76 @@ export default function LearningCanvas() {
   const [session, setSession] = useState<LearningSession | null>(
     output?.session ?? null,
   );
-  const [refreshStatus, setRefreshStatus] = useState<
-    | { status: "idle" }
-    | { status: "pending" }
-    | { status: "error"; message: string }
-  >({ status: "idle" });
+  const [presentation, setPresentation] =
+    useState<MountedPresentationState>(() =>
+      createMountedPresentationState(output?.session.revision ?? 1),
+    );
 
   useEffect(() => {
     if (output?.session) {
-      setSession(output.session);
-      setRefreshStatus({ status: "idle" });
+      setSession((mountedSession) =>
+        mountedSession
+          ? reconcileLearningSession(mountedSession, output.session).session
+          : output.session,
+      );
     }
   }, [output?.session]);
 
-  const refreshLatest = async () => {
-    if (!session || refreshStatus.status === "pending") {
+  useEffect(() => {
+    void adaptor.setViewState({ presentation }).catch(() => undefined);
+  }, [adaptor, presentation]);
+
+  const requestMode = async (requestedMode: RequestedDisplayMode) => {
+    if (presentation.modeRequestStatus === "pending") {
       return;
     }
 
-    setRefreshStatus({ status: "pending" });
+    setPresentation((current) =>
+      beginDisplayModeRequest(current, requestedMode),
+    );
+
+    try {
+      const result = await requestDisplayMode(requestedMode);
+
+      if (result.mode !== requestedMode) {
+        throw new Error(
+          `The host stayed in ${result.mode} mode instead of ${requestedMode}.`,
+        );
+      }
+
+      setPresentation((current) =>
+        completeDisplayModeRequest(current, requestedMode),
+      );
+    } catch (error) {
+      const detail =
+        error instanceof Error ? ` ${error.message}` : "";
+
+      setPresentation((current) =>
+        failDisplayModeRequest(
+          current,
+          `The host could not open ${requestedMode} mode. You can keep using this view and try again.${detail}`,
+        ),
+      );
+    }
+  };
+
+  const acceptSessionUpdate = (incomingSession: LearningSession) => {
+    setSession((mountedSession) =>
+      mountedSession
+        ? reconcileLearningSession(mountedSession, incomingSession).session
+        : incomingSession,
+    );
+    setPresentation((current) =>
+      completeSessionSynchronization(current, incomingSession.revision),
+    );
+  };
+
+  const refreshLatest = async () => {
+    if (!session || presentation.synchronizationStatus === "refreshing") {
+      return;
+    }
+
+    setPresentation((current) => beginSessionRefresh(current));
 
     try {
       const response = await readSession({ sessionId: session.sessionId });
@@ -536,26 +600,53 @@ export default function LearningCanvas() {
         );
       }
 
-      setSession(result.session);
-      await adaptor.setViewState({ session: result.session });
-      setRefreshStatus({ status: "idle" });
+      const reconciliation = reconcileLearningSession(session, result.session);
+
+      if (reconciliation.reason === "different-session") {
+        throw new Error(
+          "The refreshed result belongs to a different learning session.",
+        );
+      }
+
+      setSession(reconciliation.session);
+      setPresentation((current) =>
+        completeSessionSynchronization(
+          current,
+          reconciliation.session.revision,
+        ),
+      );
     } catch (error) {
-      setRefreshStatus({
-        status: "error",
-        message:
+      setPresentation((current) =>
+        failSessionSynchronization(
+          current,
           error instanceof Error
             ? error.message
             : "The latest session could not be read.",
-      });
+        ),
+      );
     }
   };
 
+  const layout = deriveLearningShellLayout({
+    displayMode,
+    maxHeight,
+    safeAreaInsets: safeArea?.insets,
+  });
+  const shellStyle: CSSProperties = {
+    maxHeight:
+      layout.maxHeight === undefined ? undefined : `${layout.maxHeight}px`,
+    paddingTop: `${layout.safeAreaInsets.top + 16}px`,
+    paddingRight: `${layout.safeAreaInsets.right + 16}px`,
+    paddingBottom: `${layout.safeAreaInsets.bottom + 16}px`,
+    paddingLeft: `${layout.safeAreaInsets.left + 16}px`,
+  };
   const state = session?.state;
 
   if (!session || !state) {
     return (
       <main
-        className={`${theme === "dark" ? "dark" : ""} mx-auto w-full max-w-5xl bg-background p-6 text-foreground`}
+        className={`${theme === "dark" ? "dark" : ""} mx-auto box-border w-full max-w-5xl overflow-hidden bg-background text-foreground`}
+        style={shellStyle}
       >
         <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
           No learning canvas state was returned by the tool.
@@ -564,9 +655,141 @@ export default function LearningCanvas() {
     );
   }
 
+  const viewModel = deriveLearningShellViewModel({
+    session,
+    mode: layout.mode,
+  });
+  const presentationMessage =
+    presentation.recoverableError?.message ?? layout.fallbackMessage;
+  const modeRequestPending = presentation.modeRequestStatus === "pending";
+  const refreshPending =
+    presentation.synchronizationStatus === "refreshing";
+  const modeButtonClassName =
+    "inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:border-primary/50 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-wait disabled:opacity-60";
+
+  if (viewModel.mode === "inline") {
+    return (
+      <main
+        className={`${theme === "dark" ? "dark" : ""} mx-auto box-border w-full max-w-2xl overflow-hidden bg-background text-foreground`}
+        style={shellStyle}
+        data-llm={`Learning session ${session.sessionId}, revision ${session.revision}. Inline launcher for ${state.topic}.`}
+      >
+        <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+                Make It Click session
+              </p>
+              <h1 className="mt-1 truncate text-lg font-semibold text-foreground">
+                {viewModel.topic}
+              </h1>
+            </div>
+            <span className="shrink-0 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground">
+              {viewModel.progressLabel}
+            </span>
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {viewModel.revisionLabel} · Open the focused workspace to continue
+            this learning session.
+          </p>
+          <button
+            type="button"
+            aria-label="Open learning canvas in fullscreen"
+            disabled={modeRequestPending}
+            onClick={() => void requestMode("fullscreen")}
+            className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+          >
+            <Maximize2 className="size-4" aria-hidden="true" />
+            {modeRequestPending ? "Opening canvas..." : "Open learning canvas"}
+          </button>
+          {presentationMessage ? (
+            <p
+              className="mt-3 text-sm text-rose-700 dark:text-rose-300"
+              role="alert"
+            >
+              {presentationMessage}
+            </p>
+          ) : null}
+        </section>
+      </main>
+    );
+  }
+
+  if (viewModel.mode === "pip") {
+    return (
+      <main
+        className={`${theme === "dark" ? "dark" : ""} mx-auto box-border w-full max-w-xl overflow-hidden bg-background text-foreground`}
+        style={shellStyle}
+        data-llm={`Learning session ${session.sessionId}, revision ${session.revision}. PiP companion showing ${viewModel.currentStepLabel.toLowerCase()}.`}
+      >
+        <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+                Current step
+              </p>
+              <h1 className="mt-1 truncate text-base font-semibold text-foreground">
+                {viewModel.topic}
+              </h1>
+            </div>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {viewModel.progressLabel}
+            </span>
+          </div>
+          <div className="mt-3 border-t border-border pt-3">
+            <p className="text-xs font-semibold uppercase tracking-normal text-primary">
+              {viewModel.currentStepLabel}
+            </p>
+            <p className="mt-1 line-clamp-3 text-sm font-medium leading-6 text-foreground">
+              {viewModel.currentStepText}
+            </p>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              aria-label="Return to fullscreen learning canvas"
+              disabled={modeRequestPending}
+              onClick={() => void requestMode("fullscreen")}
+              className={modeButtonClassName}
+            >
+              <Maximize2 className="size-4" aria-hidden="true" />
+              {modeRequestPending ? "Opening..." : "Return to fullscreen"}
+            </button>
+            <button
+              type="button"
+              aria-label="Refresh latest learning session revision"
+              disabled={refreshPending}
+              onClick={() => void refreshLatest()}
+              className={modeButtonClassName}
+            >
+              <RefreshCcwDot className="size-4" aria-hidden="true" />
+              {refreshPending ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            {viewModel.revisionLabel}
+          </p>
+          {presentationMessage ? (
+            <p
+              className="mt-2 text-xs text-rose-700 dark:text-rose-300"
+              role="alert"
+            >
+              {presentationMessage}
+            </p>
+          ) : null}
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main
-      className={`${theme === "dark" ? "dark" : ""} mx-auto w-full max-w-6xl bg-background p-4 text-foreground md:p-6`}
+      className={`${theme === "dark" ? "dark" : ""} mx-auto box-border w-full max-w-6xl overflow-x-hidden overflow-y-auto bg-background text-foreground`}
+      style={{
+        ...shellStyle,
+        height:
+          layout.maxHeight === undefined ? "100vh" : `${layout.maxHeight}px`,
+      }}
       data-llm={`Learning session ${session.sessionId}, revision ${session.revision}. Current knot: ${state.board.currentKnot}. Check question: ${state.board.checkQuestion ?? "none"}.`}
     >
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
@@ -581,27 +804,48 @@ export default function LearningCanvas() {
             Stay with one small step until it clicks.
           </p>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <button
-            type="button"
-            disabled={refreshStatus.status === "pending"}
-            onClick={() => void refreshLatest()}
-            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:border-primary/50 hover:bg-muted/60 disabled:cursor-wait disabled:opacity-60"
-          >
-            <RefreshCcwDot className="size-4" aria-hidden="true" />
-            {refreshStatus.status === "pending"
-              ? "Refreshing..."
-              : "Refresh latest"}
-          </button>
+        <div className="flex max-w-full flex-col items-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              aria-label="Open compact picture-in-picture learning companion"
+              disabled={modeRequestPending}
+              onClick={() => void requestMode("pip")}
+              className={modeButtonClassName}
+            >
+              <PictureInPicture2 className="size-4" aria-hidden="true" />
+              PiP
+            </button>
+            <button
+              type="button"
+              aria-label="Return learning canvas to inline mode"
+              disabled={modeRequestPending}
+              onClick={() => void requestMode("inline")}
+              className={modeButtonClassName}
+            >
+              <Minimize2 className="size-4" aria-hidden="true" />
+              Inline
+            </button>
+            <button
+              type="button"
+              aria-label="Refresh latest learning session revision"
+              disabled={refreshPending}
+              onClick={() => void refreshLatest()}
+              className={modeButtonClassName}
+            >
+              <RefreshCcwDot className="size-4" aria-hidden="true" />
+              {refreshPending ? "Refreshing..." : "Refresh latest"}
+            </button>
+          </div>
           <span className="text-xs text-muted-foreground">
             Revision {session.revision}
           </span>
-          {refreshStatus.status === "error" ? (
+          {presentationMessage ? (
             <span
               className="max-w-xs text-right text-xs text-rose-700 dark:text-rose-300"
               role="alert"
             >
-              {refreshStatus.message}
+              {presentationMessage}
             </span>
           ) : null}
         </div>
@@ -693,7 +937,7 @@ export default function LearningCanvas() {
               <InteractionBlockView
                 block={state.board.interactionBlock}
                 session={session}
-                onSessionChange={setSession}
+                onSessionChange={acceptSessionUpdate}
               />
             ) : null}
           </section>
