@@ -66,7 +66,14 @@ Each timeline item should represent one microturn. It can be marked as:
 
 Timeline entries should not become full lesson notes. They are checkpoints for the coaching process.
 
-The `update_microturn` tool should update these checkpoints from structured state, not from chat prose alone. It should record the latest user answer or typed interaction result, mark the active checkpoint, and only append the next checkpoint when the next turn still has one tiny idea, at most one example, and one check question.
+The `update_microturn` tool should update these checkpoints in the authoritative
+server-owned session, not from chat prose or a caller-reconstructed state. It
+requires the stable session id and latest revision, records the latest user
+answer or typed interaction result, marks the active checkpoint, and only
+appends the next checkpoint when the next turn still has one tiny idea, at
+most one example, and one check question. A stale revision must not overwrite
+the current session. The active canvas reaches model-driven updates through an
+explicit app-only refresh; the host still controls surrounding narration.
 
 ## Interaction Block Rules
 

@@ -48,7 +48,9 @@ const runtimeContract = [
 
 export const coachPolicyToolDescriptions = {
   startLearningCanvas:
-    `Start a Make It Click learning canvas for microturn coaching. ${runtimeContract} Open with diagnosis and a current board state.`,
+    `Start one authoritative Make It Click learning session and render its learning canvas. ${runtimeContract} Open with diagnosis and a current board state. Keep the returned session id and revision for later updates; do not launch another canvas for the same session.`,
   updateMicroturn:
-    `Update an existing Make It Click learning canvas after the user's latest plain answer or typed interaction result. ${runtimeContract} Record the signal, mark the active timeline item, and add a next microturn only when it stays typed, controlled, and one-microturn scoped. The view records interaction data; do not rely on it to auto-grade or auto-advance.`,
+    `Update one existing Make It Click learning session without rendering another widget. ${runtimeContract} Pass the session id and latest revision instead of reconstructing the full canvas state. Record the signal, mark the active timeline item, and add a next microturn only when it stays typed, controlled, and one-microturn scoped. A stale revision returns a conflict and does not change the session. The host controls any surrounding narration; do not promise that it will be fully suppressed.`,
+  readLearningSession:
+    "Refresh the active Make It Click canvas from its authoritative server-owned session. This app-only, viewless tool is the initial synchronization mechanism after model-driven updates.",
 } as const;

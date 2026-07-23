@@ -16,23 +16,24 @@ A turn teaches exactly one small idea, uses at most one example or visual, asks 
 
 ## Tools and state flow
 
-The server exposes two tools:
+The server exposes one view-backed launcher and two viewless session tools:
 
-- `start_learning_canvas` starts a session from a required topic plus optional confusion and conversation context. It returns an initial structured state with an open diagnosis microturn.
-- `update_microturn` receives the existing state and either a plain-text answer or a typed interaction result. It records the user's signal, can update the active timeline status, and can append one caller-provided next microturn.
+- `start_learning_canvas` creates an in-memory server-owned session from a required topic plus optional confusion and conversation context. It returns the stable session id, revision, timestamps, and initial structured state.
+- `update_microturn` requires the session id and expected revision plus either a plain-text answer or typed interaction result. It updates the authoritative state exactly once when the revision is current and returns a structured conflict without mutation when it is stale.
+- `read_learning_session` is app-only. The active canvas calls it when the user chooses **Refresh latest**, which is the initial synchronization mechanism for model-driven updates.
 
-Both tools render the same learning canvas through separate Skybridge view entry points:
+Only `start_learning_canvas` renders the learning canvas:
 
 ```txt
-Tool call
-  -> structured LearningCanvasState
+View-backed start
+  -> server-owned LearningSession
   -> shared React learning canvas
   -> plain answer or typed user interaction
-  -> update_microturn
-  -> updated state for the model and view
+  -> viewless revision-guarded update_microturn
+  -> explicit app-only read_learning_session refresh when needed
 ```
 
-The state is defined and validated with Zod in [`src/domain/learning-canvas-state.ts`](src/domain/learning-canvas-state.ts). Its board keeps the current knot, tiny core idea, optional example, check question, optional typed interaction, user version, and confidence. Its timeline records compact microturn checkpoints with `open`, `understood`, `uncertain`, or `revisit` status.
+The canvas state is defined and validated with Zod in [`src/domain/learning-canvas-state.ts`](src/domain/learning-canvas-state.ts). The authoritative session and revision results live in [`src/domain/learning-session.ts`](src/domain/learning-session.ts), while [`src/learning-session-store.ts`](src/learning-session-store.ts) is the small process-local action boundary. Its board keeps the current knot, tiny core idea, optional example, check question, optional typed interaction, user version, and confidence. Its timeline records compact microturn checkpoints with `open`, `understood`, `uncertain`, or `revisit` status.
 
 ### Implemented interaction blocks
 
@@ -41,19 +42,19 @@ The current discriminated union contains two safe, serializable interaction bloc
 - `MultipleChoiceCheck`: one question with 2–6 explicit options; submission records the selected option as structured data.
 - `ConfidenceSlider`: one question with a value from `0` to `1` and a default step of `0.1`; submission records the selected confidence as structured data.
 
-Both submit through `update_microturn`. The view preserves and exposes the structured result, but does not grade it, change the timeline status, or create the next microturn on its own.
+Both submit their typed result plus the current session id and revision through `update_microturn`. The view preserves and exposes the structured result, but does not grade it, change the timeline status, or create the next microturn on its own.
 
 ## Project structure
 
 ```txt
 src/
   server.ts                         MCP server and tool registration
+  learning-session-store.ts         In-memory session action boundary
   helpers.ts                        Typed Skybridge view helpers
-  domain/                           State schemas and coaching computations
+  domain/                           State/session data and pure computations
   views/
     learning-canvas.tsx             Shared learning board and timeline
     start-learning-canvas.tsx       start_learning_canvas view entry
-    update-learning-canvas.tsx      update_microturn view entry
   components/                       Reusable controlled UI components
 docs/
   coach-policy.md                   Coaching runtime contract
@@ -98,7 +99,7 @@ When an interactive smoke check is needed, start Skybridge DevTools in the foreg
 npm run dev
 ```
 
-Open the local URL printed by Skybridge, invoke `start_learning_canvas`, and optionally submit one interaction to `update_microturn`. Do not assume a fixed port; use the URL reported by the command.
+Open the local URL printed by Skybridge, invoke `start_learning_canvas`, and optionally exercise a valid update, stale update, missing read, and **Refresh latest**. Do not assume a fixed port; use the URL reported by the command.
 
 Stop the server with `Ctrl+C` as soon as the check is complete. Before finishing work, confirm that the command returned to the shell and that no project-related Skybridge, Node, watcher, or browser-automation process started for the check remains running.
 
@@ -109,7 +110,9 @@ Tunnel and deployment commands are intentionally not part of the default local w
 - Interaction submissions are not automatically graded.
 - Submitting an interaction does not automatically change timeline status or advance to another microturn; the model or tool caller must evaluate the signal and provide those updates.
 - The model cannot generate arbitrary React or executable UI. It can only provide data for the implemented typed interaction schemas.
-- Learning state is passed between tool calls and view updates; there is no persistence layer, database, authentication, analytics, or external service.
+- Learning sessions are stored only in the current server process and disappear when it stops; there is no durable persistence layer, database, authentication, analytics, or external service.
+- Model-driven viewless updates do not push into an already-open canvas. The user must choose **Refresh latest**.
+- ChatGPT controls surrounding narration and status UI; the app does not guarantee their suppression.
 - The canvas supports one focused microturn at a time rather than generating a multi-step lesson.
 
 ## Sources of truth

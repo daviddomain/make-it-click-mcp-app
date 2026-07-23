@@ -18,7 +18,6 @@ import { useCallTool, useToolInfo } from "@/helpers.js";
 import { ConfidenceSliderControl } from "@/components/confidence-slider-control.js";
 import {
   createConfidenceSliderResult,
-  createConfidenceSliderSubmission,
   normalizeConfidenceSliderValue,
 } from "@/domain/confidence-slider.js";
 import type {
@@ -32,10 +31,8 @@ import type {
   MultipleChoiceCheckResult,
   TimelineStatus,
 } from "@/domain/learning-canvas-state.js";
-import {
-  createMultipleChoiceCheckResult,
-  createMultipleChoiceSubmission,
-} from "@/domain/multiple-choice-check.js";
+import type { LearningSession } from "@/domain/learning-session.js";
+import { createMultipleChoiceCheckResult } from "@/domain/multiple-choice-check.js";
 
 const statusClassNames: Record<TimelineStatus, string> = {
   open: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200",
@@ -106,12 +103,14 @@ function ExampleBlockView({ example }: { example: ExampleBlock | null }) {
 
 function MultipleChoiceCheckView({
   block,
-  state,
+  session,
   showQuestion,
+  onSessionChange,
 }: {
   block: MultipleChoiceCheckBlock;
-  state: LearningCanvasState;
+  session: LearningSession;
   showQuestion: boolean;
+  onSessionChange: (session: LearningSession) => void;
 }) {
   const [selectedOptionId, setSelectedOptionId] = useState(
     block.selectedOptionId ?? "",
@@ -179,14 +178,18 @@ function MultipleChoiceCheckView({
     setSubmissionState({ status: "pending" });
 
     try {
-      const response = await callToolAsync(
-        createMultipleChoiceSubmission(
-          state,
-          block,
-          interactionResult.selectedOptionId,
-        ),
-      );
-      const submittedResult = response.structuredContent.interactionResult;
+      const response = await callToolAsync({
+        sessionId: session.sessionId,
+        expectedRevision: session.revision,
+        interactionResult,
+      });
+      const result = response.structuredContent.result;
+      const submittedResult =
+        result.status === "ok" ? result.interactionResult : null;
+
+      if (result.status !== "ok") {
+        throw new Error(result.error.message);
+      }
 
       if (
         response.isError ||
@@ -200,14 +203,18 @@ function MultipleChoiceCheckView({
       }
 
       await adaptor.setViewState({
-        state: response.structuredContent.state,
+        session: result.session,
         interactionResult: submittedResult,
       });
+      onSessionChange(result.session);
       setSubmissionState({ status: "success", result: submittedResult });
-    } catch {
+    } catch (error) {
       setSubmissionState({
         status: "error",
-        message: "The answer could not be submitted. Please try again.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The answer could not be submitted. Please try again.",
       });
     }
   };
@@ -285,12 +292,14 @@ function MultipleChoiceCheckView({
 
 function ConfidenceSliderView({
   block,
-  state,
+  session,
   showQuestion,
+  onSessionChange,
 }: {
   block: ConfidenceSliderBlock;
-  state: LearningCanvasState;
+  session: LearningSession;
   showQuestion: boolean;
+  onSessionChange: (session: LearningSession) => void;
 }) {
   const [value, setValue] = useState(block.value);
   const [submissionState, setSubmissionState] = useState<
@@ -346,10 +355,18 @@ function ConfidenceSliderView({
     setSubmissionState({ status: "pending" });
 
     try {
-      const response = await callToolAsync(
-        createConfidenceSliderSubmission(state, block, value),
-      );
-      const submittedResult = response.structuredContent.interactionResult;
+      const response = await callToolAsync({
+        sessionId: session.sessionId,
+        expectedRevision: session.revision,
+        interactionResult,
+      });
+      const result = response.structuredContent.result;
+      const submittedResult =
+        result.status === "ok" ? result.interactionResult : null;
+
+      if (result.status !== "ok") {
+        throw new Error(result.error.message);
+      }
 
       if (
         response.isError ||
@@ -362,14 +379,18 @@ function ConfidenceSliderView({
       }
 
       await adaptor.setViewState({
-        state: response.structuredContent.state,
+        session: result.session,
         interactionResult: submittedResult,
       });
+      onSessionChange(result.session);
       setSubmissionState({ status: "success", result: submittedResult });
-    } catch {
+    } catch (error) {
       setSubmissionState({
         status: "error",
-        message: "The confidence could not be submitted. Please try again.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The confidence could not be submitted. Please try again.",
       });
     }
   };
@@ -401,11 +422,14 @@ function ConfidenceSliderView({
 
 function InteractionBlockView({
   block,
-  state,
+  session,
+  onSessionChange,
 }: {
   block: InteractionBlock;
-  state: LearningCanvasState;
+  session: LearningSession;
+  onSessionChange: (session: LearningSession) => void;
 }) {
+  const state = session.state;
   const showQuestion = block.question !== state.board.checkQuestion;
 
   switch (block.type) {
@@ -413,16 +437,18 @@ function InteractionBlockView({
       return (
         <MultipleChoiceCheckView
           block={block}
-          state={state}
+          session={session}
           showQuestion={showQuestion}
+          onSessionChange={onSessionChange}
         />
       );
     case "ConfidenceSlider":
       return (
         <ConfidenceSliderView
           block={block}
-          state={state}
+          session={session}
           showQuestion={showQuestion}
+          onSessionChange={onSessionChange}
         />
       );
   }
@@ -470,11 +496,63 @@ function ConfidenceView({
 
 export default function LearningCanvas() {
   const { theme } = useLayout();
-  const { output } =
-    useToolInfo<"start_learning_canvas" | "update_microturn">();
-  const state = output?.state;
+  const { output } = useToolInfo<"start_learning_canvas">();
+  const { callToolAsync: readSession } = useCallTool(
+    "read_learning_session",
+  );
+  const adaptor = getAdaptor();
+  const [session, setSession] = useState<LearningSession | null>(
+    output?.session ?? null,
+  );
+  const [refreshStatus, setRefreshStatus] = useState<
+    | { status: "idle" }
+    | { status: "pending" }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
 
-  if (!state) {
+  useEffect(() => {
+    if (output?.session) {
+      setSession(output.session);
+      setRefreshStatus({ status: "idle" });
+    }
+  }, [output?.session]);
+
+  const refreshLatest = async () => {
+    if (!session || refreshStatus.status === "pending") {
+      return;
+    }
+
+    setRefreshStatus({ status: "pending" });
+
+    try {
+      const response = await readSession({ sessionId: session.sessionId });
+      const result = response.structuredContent.result;
+
+      if (response.isError || result.status !== "ok") {
+        throw new Error(
+          result.status === "not_found"
+            ? result.error.message
+            : "The latest session could not be read.",
+        );
+      }
+
+      setSession(result.session);
+      await adaptor.setViewState({ session: result.session });
+      setRefreshStatus({ status: "idle" });
+    } catch (error) {
+      setRefreshStatus({
+        status: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The latest session could not be read.",
+      });
+    }
+  };
+
+  const state = session?.state;
+
+  if (!session || !state) {
     return (
       <main
         className={`${theme === "dark" ? "dark" : ""} mx-auto w-full max-w-5xl bg-background p-6 text-foreground`}
@@ -489,18 +567,44 @@ export default function LearningCanvas() {
   return (
     <main
       className={`${theme === "dark" ? "dark" : ""} mx-auto w-full max-w-6xl bg-background p-4 text-foreground md:p-6`}
-      data-llm={`Learning canvas for ${state.topic}. Current knot: ${state.board.currentKnot}. Check question: ${state.board.checkQuestion ?? "none"}.`}
+      data-llm={`Learning session ${session.sessionId}, revision ${session.revision}. Current knot: ${state.board.currentKnot}. Check question: ${state.board.checkQuestion ?? "none"}.`}
     >
-      <header className="mb-5 border-b border-border pb-4">
-        <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-          Make It Click canvas
-        </p>
-        <h1 className="text-xl font-semibold leading-7 text-foreground md:text-2xl">
-          {state.topic}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Stay with one small step until it clicks.
-        </p>
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+            Make It Click canvas
+          </p>
+          <h1 className="text-xl font-semibold leading-7 text-foreground md:text-2xl">
+            {state.topic}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Stay with one small step until it clicks.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            disabled={refreshStatus.status === "pending"}
+            onClick={() => void refreshLatest()}
+            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:border-primary/50 hover:bg-muted/60 disabled:cursor-wait disabled:opacity-60"
+          >
+            <RefreshCcwDot className="size-4" aria-hidden="true" />
+            {refreshStatus.status === "pending"
+              ? "Refreshing..."
+              : "Refresh latest"}
+          </button>
+          <span className="text-xs text-muted-foreground">
+            Revision {session.revision}
+          </span>
+          {refreshStatus.status === "error" ? (
+            <span
+              className="max-w-xs text-right text-xs text-rose-700 dark:text-rose-300"
+              role="alert"
+            >
+              {refreshStatus.message}
+            </span>
+          ) : null}
+        </div>
       </header>
 
       <div className="grid gap-5 md:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.75fr)]">
@@ -588,7 +692,8 @@ export default function LearningCanvas() {
             {state.board.interactionBlock ? (
               <InteractionBlockView
                 block={state.board.interactionBlock}
-                state={state}
+                session={session}
+                onSessionChange={setSession}
               />
             ) : null}
           </section>
