@@ -44,8 +44,19 @@ export const multipleChoiceCheckBlockSchema = z.object({
   selectedOptionId: z.string().trim().min(1).optional(),
 });
 
+export const confidenceSliderValueSchema = z.number().min(0).max(1);
+
+export const confidenceSliderBlockSchema = z.object({
+  type: z.literal("ConfidenceSlider"),
+  id: z.string().trim().min(1),
+  question: z.string().trim().min(1),
+  value: confidenceSliderValueSchema,
+  step: z.number().positive().max(1).default(0.1),
+});
+
 export const interactionBlockSchema = z.discriminatedUnion("type", [
   multipleChoiceCheckBlockSchema,
+  confidenceSliderBlockSchema,
 ]);
 
 export const multipleChoiceCheckResultSchema = z.object({
@@ -56,6 +67,18 @@ export const multipleChoiceCheckResultSchema = z.object({
   selectedValue: z.string().trim().min(1).optional(),
   selectedLabel: z.string().trim().min(1),
 });
+
+export const confidenceSliderResultSchema = z.object({
+  type: z.literal("ConfidenceSlider"),
+  blockId: z.string().trim().min(1),
+  question: z.string().trim().min(1),
+  value: confidenceSliderValueSchema,
+});
+
+export const interactionResultSchema = z.discriminatedUnion("type", [
+  multipleChoiceCheckResultSchema,
+  confidenceSliderResultSchema,
+]);
 
 export const exampleBlockSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -131,10 +154,17 @@ export type MultipleChoiceOption = z.infer<typeof multipleChoiceOptionSchema>;
 export type MultipleChoiceCheckBlock = z.infer<
   typeof multipleChoiceCheckBlockSchema
 >;
+export type ConfidenceSliderBlock = z.infer<
+  typeof confidenceSliderBlockSchema
+>;
 export type InteractionBlock = z.infer<typeof interactionBlockSchema>;
 export type MultipleChoiceCheckResult = z.infer<
   typeof multipleChoiceCheckResultSchema
 >;
+export type ConfidenceSliderResult = z.infer<
+  typeof confidenceSliderResultSchema
+>;
+export type InteractionResult = z.infer<typeof interactionResultSchema>;
 export type ExampleBlock = z.infer<typeof exampleBlockSchema>;
 export type LearningBoardState = z.infer<typeof learningBoardStateSchema>;
 export type MicroturnTimelineItem = z.infer<

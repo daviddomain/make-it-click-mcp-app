@@ -3,10 +3,10 @@ import { z } from "zod";
 import {
   confidenceSchema,
   exampleBlockSchema,
+  interactionResultSchema,
   interactionBlockSchema,
   learningCanvasStateSchema,
   microturnKindSchema,
-  multipleChoiceCheckResultSchema,
   type LearningCanvasState,
   type MicroturnKind,
 } from "./learning-canvas-state.js";
@@ -32,7 +32,7 @@ export const nextMicroturnInputSchema = z.object({
 const updateMicroturnInputBaseSchema = z.object({
   state: learningCanvasStateSchema,
   userAnswer: z.string().trim().min(1).optional(),
-  interactionResult: multipleChoiceCheckResultSchema.optional(),
+  interactionResult: interactionResultSchema.optional(),
   timelineStatus: completedTimelineStatusSchema.optional(),
   nextMicroturn: nextMicroturnInputSchema.optional(),
 });
@@ -52,7 +52,7 @@ export type UpdateMicroturnInput = z.infer<typeof updateMicroturnInputSchema>;
 
 export const updateMicroturnOutputSchema = z.object({
   state: learningCanvasStateSchema,
-  interactionResult: multipleChoiceCheckResultSchema.nullable(),
+  interactionResult: interactionResultSchema.nullable(),
 });
 
 export type UpdateMicroturnOutput = z.infer<
