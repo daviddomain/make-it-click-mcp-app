@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
+import { ConfidenceSliderControl } from "../components/confidence-slider-control.js";
 import {
+  createConfidenceSliderResult,
+  createConfidenceSliderSubmission,
+  normalizeConfidenceSliderValue,
+} from "./confidence-slider.js";
+import {
+  confidenceSliderBlockSchema,
+  confidenceSliderResultSchema,
   learningCanvasStateSchema,
   multipleChoiceCheckResultSchema,
+  type ConfidenceSliderBlock,
   type MultipleChoiceCheckBlock,
 } from "./learning-canvas-state.js";
 import {
@@ -39,6 +50,15 @@ function createMultipleChoiceBlock(): MultipleChoiceCheckBlock {
       },
     ],
   };
+}
+
+function createConfidenceSliderBlock(): ConfidenceSliderBlock {
+  return confidenceSliderBlockSchema.parse({
+    type: "ConfidenceSlider",
+    id: "event-loop-confidence",
+    question: "How confident are you about the callback order?",
+    value: 0.4,
+  });
 }
 
 test("starts with the supplied topic, confusion knot, check, and an open diagnosis", () => {
@@ -173,6 +193,134 @@ test("creates an exact typed submission without grading or advancing", () => {
     updatedState.board.userVersion,
     "type: MultipleChoiceCheck; blockId: event-loop-order; question: What runs next?; selectedOptionId: timer; selectedValue: timer callback; selectedLabel: The timer callback",
   );
+});
+
+test("accepts confidence slider boundaries and applies the default step", () => {
+  const lowerBoundary = confidenceSliderBlockSchema.parse({
+    type: "ConfidenceSlider",
+    id: "lower-boundary",
+    question: "How confident are you?",
+    value: 0,
+  });
+  const upperBoundary = confidenceSliderBlockSchema.parse({
+    ...lowerBoundary,
+    id: "upper-boundary",
+    value: 1,
+  });
+
+  assert.equal(lowerBoundary.value, 0);
+  assert.equal(lowerBoundary.step, 0.1);
+  assert.equal(upperBoundary.value, 1);
+});
+
+test("rejects confidence slider block and result values outside zero to one", () => {
+  for (const value of [-0.01, 1.01]) {
+    assert.throws(() =>
+      confidenceSliderBlockSchema.parse({
+        type: "ConfidenceSlider",
+        id: "invalid-confidence",
+        question: "How confident are you?",
+        value,
+      }),
+    );
+    assert.throws(() =>
+      confidenceSliderResultSchema.parse({
+        type: "ConfidenceSlider",
+        blockId: "invalid-confidence",
+        question: "How confident are you?",
+        value,
+      }),
+    );
+    assert.throws(() => normalizeConfidenceSliderValue(value));
+  }
+});
+
+test("normalizes floating-point noise and creates the confidence result", () => {
+  const block = createConfidenceSliderBlock();
+  const result = createConfidenceSliderResult(
+    block,
+    0.30000000000000004,
+  );
+
+  assert.deepEqual(result, {
+    type: "ConfidenceSlider",
+    blockId: "event-loop-confidence",
+    question: "How confident are you about the callback order?",
+    value: 0.3,
+  });
+});
+
+test("creates a confidence submission without grading or advancing", () => {
+  const state = createDiagnosticState();
+  const block = createConfidenceSliderBlock();
+  state.board.interactionBlock = block;
+  const submission = createConfidenceSliderSubmission(state, block, 0.7);
+
+  assert.deepEqual(Object.keys(submission), ["state", "interactionResult"]);
+  assert.strictEqual(submission.state, state);
+
+  const updatedState = applyMicroturnUpdate(submission);
+
+  assert.equal(updatedState.timeline.length, state.timeline.length);
+  assert.equal(updatedState.timeline[0]?.status, "open");
+  assert.deepEqual(updatedState.board.confidence, state.board.confidence);
+  assert.equal(
+    updatedState.board.userVersion,
+    "type: ConfidenceSlider; blockId: event-loop-confidence; question: How confident are you about the callback order?; value: 0.7",
+  );
+});
+
+test("renders an accessible native confidence range and visible value", () => {
+  const markup = renderToStaticMarkup(
+    createElement(ConfidenceSliderControl, {
+      block: createConfidenceSliderBlock(),
+      value: 0.6,
+      feedback: { status: "idle" },
+      showQuestion: true,
+      onValueChange: () => undefined,
+      onSubmit: () => undefined,
+    }),
+  );
+
+  assert.match(markup, /<label[^>]+for="confidence-slider-event-loop-confidence"/);
+  assert.match(markup, /type="range"/);
+  assert.match(markup, /min="0"/);
+  assert.match(markup, /max="1"/);
+  assert.match(markup, /step="0.1"/);
+  assert.match(markup, /value="0.6"/);
+  assert.match(markup, /aria-valuetext="60% confidence"/);
+  assert.match(markup, />60%<\/output>/);
+});
+
+test("keeps the selected confidence visible while pending or after an error", () => {
+  const block = createConfidenceSliderBlock();
+  const pendingMarkup = renderToStaticMarkup(
+    createElement(ConfidenceSliderControl, {
+      block,
+      value: 0.8,
+      feedback: { status: "pending" },
+      showQuestion: false,
+      onValueChange: () => undefined,
+      onSubmit: () => undefined,
+    }),
+  );
+  const errorMarkup = renderToStaticMarkup(
+    createElement(ConfidenceSliderControl, {
+      block,
+      value: 0.8,
+      feedback: { status: "error", message: "Try again." },
+      showQuestion: false,
+      onValueChange: () => undefined,
+      onSubmit: () => undefined,
+    }),
+  );
+
+  assert.match(pendingMarkup, /value="0.8"/);
+  assert.match(pendingMarkup, /disabled=""/);
+  assert.match(pendingMarkup, /Submitting confidence/);
+  assert.match(errorMarkup, /value="0.8"/);
+  assert.match(errorMarkup, /role="alert"/);
+  assert.match(errorMarkup, /Try again\./);
 });
 
 test("closes the latest open item and appends exactly one next microturn", () => {

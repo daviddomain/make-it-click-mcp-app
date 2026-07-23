@@ -131,6 +131,12 @@ the tool flow and exposes the resulting structured context to the model, but it
 does not grade the answer, change the timeline status, or create the next
 microturn.
 
+The second implemented block is `ConfidenceSlider`. It uses a native range
+control for one question and a normalized value from `0` to `1`, with a default
+step of `0.1`. Its structured result contains the stable block id, question, and
+selected value. It reuses the explicit interaction-result handoff and does not
+grade confidence, change timeline status, or advance the coaching flow.
+
 ## Data Model Direction
 
 Represent learning state as data first, then render it through known components.

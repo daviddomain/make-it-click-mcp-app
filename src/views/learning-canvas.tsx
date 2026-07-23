@@ -15,8 +15,17 @@ import { useEffect, useMemo, useState } from "react";
 import { getAdaptor, useLayout } from "skybridge/web";
 
 import { useCallTool, useToolInfo } from "@/helpers.js";
+import { ConfidenceSliderControl } from "@/components/confidence-slider-control.js";
+import {
+  createConfidenceSliderResult,
+  createConfidenceSliderSubmission,
+  normalizeConfidenceSliderValue,
+} from "@/domain/confidence-slider.js";
 import type {
+  ConfidenceSliderBlock,
+  ConfidenceSliderResult,
   ExampleBlock,
+  InteractionBlock,
   LearningCanvasState,
   MicroturnKind,
   MultipleChoiceCheckBlock,
@@ -182,6 +191,7 @@ function MultipleChoiceCheckView({
       if (
         response.isError ||
         !submittedResult ||
+        submittedResult.type !== "MultipleChoiceCheck" ||
         submittedResult.blockId !== interactionResult.blockId ||
         submittedResult.selectedOptionId !==
           interactionResult.selectedOptionId
@@ -271,6 +281,151 @@ function MultipleChoiceCheckView({
       </div>
     </div>
   );
+}
+
+function ConfidenceSliderView({
+  block,
+  state,
+  showQuestion,
+}: {
+  block: ConfidenceSliderBlock;
+  state: LearningCanvasState;
+  showQuestion: boolean;
+}) {
+  const [value, setValue] = useState(block.value);
+  const [submissionState, setSubmissionState] = useState<
+    | { status: "idle" }
+    | { status: "pending" }
+    | { status: "success"; result: ConfidenceSliderResult }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
+  const { callToolAsync } = useCallTool("update_microturn");
+  const adaptor = getAdaptor();
+
+  useEffect(() => {
+    setValue(block.value);
+    setSubmissionState({ status: "idle" });
+  }, [block.id, block.value]);
+
+  const interactionResult = useMemo(
+    () => createConfidenceSliderResult(block, value),
+    [block, value],
+  );
+  const isPending = submissionState.status === "pending";
+
+  const interactionDescription = (() => {
+    if (submissionState.status === "success") {
+      return `ConfidenceSlider submitted: ${JSON.stringify(submissionState.result)}`;
+    }
+
+    if (submissionState.status === "error") {
+      return `ConfidenceSlider submission failed; value retained: ${JSON.stringify(interactionResult)}`;
+    }
+
+    if (isPending) {
+      return `ConfidenceSlider submission pending: ${JSON.stringify(interactionResult)}`;
+    }
+
+    return `ConfidenceSlider selected but not submitted: ${JSON.stringify(interactionResult)}`;
+  })();
+
+  const handleValueChange = (nextValue: number) => {
+    if (isPending) {
+      return;
+    }
+
+    setValue(normalizeConfidenceSliderValue(nextValue));
+    setSubmissionState({ status: "idle" });
+  };
+
+  const handleSubmit = async () => {
+    if (isPending) {
+      return;
+    }
+
+    setSubmissionState({ status: "pending" });
+
+    try {
+      const response = await callToolAsync(
+        createConfidenceSliderSubmission(state, block, value),
+      );
+      const submittedResult = response.structuredContent.interactionResult;
+
+      if (
+        response.isError ||
+        !submittedResult ||
+        submittedResult.type !== "ConfidenceSlider" ||
+        submittedResult.blockId !== interactionResult.blockId ||
+        submittedResult.value !== interactionResult.value
+      ) {
+        throw new Error("The submitted result was not confirmed.");
+      }
+
+      await adaptor.setViewState({
+        state: response.structuredContent.state,
+        interactionResult: submittedResult,
+      });
+      setSubmissionState({ status: "success", result: submittedResult });
+    } catch {
+      setSubmissionState({
+        status: "error",
+        message: "The confidence could not be submitted. Please try again.",
+      });
+    }
+  };
+
+  return (
+    <div
+      data-llm={interactionDescription}
+      aria-busy={isPending}
+    >
+      <ConfidenceSliderControl
+        block={block}
+        value={value}
+        feedback={
+          submissionState.status === "success"
+            ? {
+                status: "success",
+                message:
+                  "Confidence submitted. The coach can use the structured result.",
+              }
+            : submissionState
+        }
+        showQuestion={showQuestion}
+        onValueChange={handleValueChange}
+        onSubmit={handleSubmit}
+      />
+    </div>
+  );
+}
+
+function InteractionBlockView({
+  block,
+  state,
+}: {
+  block: InteractionBlock;
+  state: LearningCanvasState;
+}) {
+  const showQuestion = block.question !== state.board.checkQuestion;
+
+  switch (block.type) {
+    case "MultipleChoiceCheck":
+      return (
+        <MultipleChoiceCheckView
+          block={block}
+          state={state}
+          showQuestion={showQuestion}
+        />
+      );
+    case "ConfidenceSlider":
+      return (
+        <ConfidenceSliderView
+          block={block}
+          state={state}
+          showQuestion={showQuestion}
+        />
+      );
+  }
 }
 
 function ConfidenceView({
@@ -430,14 +585,10 @@ export default function LearningCanvas() {
                 </span>
               )}
             </p>
-            {state.board.interactionBlock?.type === "MultipleChoiceCheck" ? (
-              <MultipleChoiceCheckView
+            {state.board.interactionBlock ? (
+              <InteractionBlockView
                 block={state.board.interactionBlock}
                 state={state}
-                showQuestion={
-                  state.board.interactionBlock.question !==
-                  state.board.checkQuestion
-                }
               />
             ) : null}
           </section>
