@@ -1,95 +1,121 @@
-# Skybridge Template
+# Make It Click MCP App
 
-A starter TypeScript template for building MCP and ChatGPT Apps with the [Skybridge](https://docs.skybridge.tech) framework.
+Make It Click is a Skybridge MCP/ChatGPT app for focused micro-coaching. It gives the user and the model a shared learning canvas for the current confusion, one small idea, one check, and the progress made across earlier microturns.
 
-## Getting Started
+It is a structured coaching canvas, not a generic lesson builder.
+
+## Coaching contract
+
+Every microturn follows the same rhythm:
+
+```txt
+diagnose -> one tiny idea -> check -> wait -> next tiny idea
+```
+
+A turn teaches exactly one small idea, uses at most one example or visual, asks exactly one check question, and then waits for the user's next signal. The full product rules live in the [product spec](SPEC.md) and [coach policy](docs/coach-policy.md).
+
+## Tools and state flow
+
+The server exposes two tools:
+
+- `start_learning_canvas` starts a session from a required topic plus optional confusion and conversation context. It returns an initial structured state with an open diagnosis microturn.
+- `update_microturn` receives the existing state and either a plain-text answer or a typed interaction result. It records the user's signal, can update the active timeline status, and can append one caller-provided next microturn.
+
+Both tools render the same learning canvas through separate Skybridge view entry points:
+
+```txt
+Tool call
+  -> structured LearningCanvasState
+  -> shared React learning canvas
+  -> plain answer or typed user interaction
+  -> update_microturn
+  -> updated state for the model and view
+```
+
+The state is defined and validated with Zod in [`src/domain/learning-canvas-state.ts`](src/domain/learning-canvas-state.ts). Its board keeps the current knot, tiny core idea, optional example, check question, optional typed interaction, user version, and confidence. Its timeline records compact microturn checkpoints with `open`, `understood`, `uncertain`, or `revisit` status.
+
+### Implemented interaction blocks
+
+The current discriminated union contains two safe, serializable interaction blocks:
+
+- `MultipleChoiceCheck`: one question with 2–6 explicit options; submission records the selected option as structured data.
+- `ConfidenceSlider`: one question with a value from `0` to `1` and a default step of `0.1`; submission records the selected confidence as structured data.
+
+Both submit through `update_microturn`. The view preserves and exposes the structured result, but does not grade it, change the timeline status, or create the next microturn on its own.
+
+## Project structure
+
+```txt
+src/
+  server.ts                         MCP server and tool registration
+  helpers.ts                        Typed Skybridge view helpers
+  domain/                           State schemas and coaching computations
+  views/
+    learning-canvas.tsx             Shared learning board and timeline
+    start-learning-canvas.tsx       start_learning_canvas view entry
+    update-learning-canvas.tsx      update_microturn view entry
+  components/                       Reusable controlled UI components
+docs/
+  coach-policy.md                   Coaching runtime contract
+SPEC.md                             Product and architecture source of truth
+AGENTS.md                           Repository workflow and coding guidance
+```
+
+## Local setup
 
 ### Prerequisites
 
-- Node.js 24+
+- Node.js `>=24.14.1`
+- npm
 
-### Local Development
-
-#### 1. Install
+Install dependencies from the repository root:
 
 ```bash
 npm install
-# or
-pnpm install
-# or
-bun install
-# or
-deno install
-# or
-yarn install
 ```
 
-#### 2. Start your local server
+## Test and build
 
-Run the development server from the root directory:
+Run the deterministic domain and interaction tests:
+
+```bash
+npm test
+```
+
+Build the MCP server and views:
+
+```bash
+npm run build
+```
+
+These commands are the bounded default validation workflow.
+
+## Bounded local DevTools check
+
+When an interactive smoke check is needed, start Skybridge DevTools in the foreground:
 
 ```bash
 npm run dev
-# or
-pnpm dev
-# or
-bun dev
-# or
-deno task dev
-# or
-yarn dev
 ```
 
-This command starts:
-- Your MCP server at `http://localhost:3000/mcp`.
-- Skybridge DevTools UI at `http://localhost:3000`.
+Open the local URL printed by Skybridge, invoke `start_learning_canvas`, and optionally submit one interaction to `update_microturn`. Do not assume a fixed port; use the URL reported by the command.
 
-#### 3. Project structure
+Stop the server with `Ctrl+C` as soon as the check is complete. Before finishing work, confirm that the command returned to the shell and that no project-related Skybridge, Node, watcher, or browser-automation process started for the check remains running.
 
-```
-├── src/
-│   ├── server.ts         # Server entry point
-│   ├── views/            # React components (one per view)
-│   ├── components/       # Shared UI components
-│   ├── helpers.ts        # Shared utilities
-│   └── index.css         # Global styles
-├── vite.config.ts
-├── alpic.json            # Deployment config
-└── package.json
-```
+Tunnel and deployment commands are intentionally not part of the default local workflow.
 
-### Create your first view
+## Current limits
 
-#### 1. Add a new view
+- Interaction submissions are not automatically graded.
+- Submitting an interaction does not automatically change timeline status or advance to another microturn; the model or tool caller must evaluate the signal and provide those updates.
+- The model cannot generate arbitrary React or executable UI. It can only provide data for the implemented typed interaction schemas.
+- Learning state is passed between tool calls and view updates; there is no persistence layer, database, authentication, analytics, or external service.
+- The canvas supports one focused microturn at a time rather than generating a multi-step lesson.
 
-- Register a tool in `src/server.ts` with a unique name (e.g., `my-view`) using [`registerTool`](https://docs.skybridge.tech/api-reference/register-tool) and a `view` config.
-- Create a matching React component at `src/views/my-view.tsx`. **The file name must match the view name exactly**.
+## Sources of truth
 
-#### 2. Edit views with Hot Module Replacement (HMR)
-
-Edit and save components in `src/views/` — changes will appear instantly inside your App.
-
-#### 3. Edit server code
-
-Modify files in `src/` and refresh the tool list with your MCP Client to see the changes.
-
-### Testing your App
-
-You can test your app locally by using our DevTools UI on `http://localhost:3000` while running the `dev` command.
-
-To connect your app with web clients like ChatGPT or Claude, expose your server on the internet by adding the `--tunnel` flag.
-By enabling the tunnel, you'll also be able to access a playground to chat with your app and a real LLM. Learn more by reading the [test guide](https://docs.skybridge.tech/quickstart/test-your-app).
-
-
-## Deploy to Production
-
-Skybridge is infrastructure vendor agnostic, and your app can be deployed on any cloud platform supporting MCP.
-
-The simplest way to deploy your app is by running the `deploy` command, which will push your MCP server to the [Alpic](https://alpic.ai/) cloud for free.
-
-## Resources
-- [Skybridge Documentation](https://docs.skybridge.tech/)
-- [Apps SDK Documentation](https://developers.openai.com/apps-sdk)
-- [MCP Apps Documentation](https://github.com/modelcontextprotocol/ext-apps/tree/main)
-- [Model Context Protocol Documentation](https://modelcontextprotocol.io/)
-- [Alpic Documentation](https://docs.alpic.ai/)
+- [Product specification](SPEC.md)
+- [Coach policy](docs/coach-policy.md)
+- [Repository and agent guidance](AGENTS.md)
+- [Tool registration](src/server.ts)
+- [Learning state schema](src/domain/learning-canvas-state.ts)
