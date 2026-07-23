@@ -33,6 +33,21 @@ View-backed start
   -> explicit app-only read_learning_session refresh when needed
 ```
 
+The mounted canvas is host-aware without creating another session or widget:
+
+- inline mode is a compact launcher with topic, progress, and revision;
+- fullscreen is the primary board-and-timeline workspace and owns the only
+  vertical scroll surface;
+- PiP shows the topic, current tiny idea or question, compact progress, and a
+  return-to-fullscreen action.
+
+All three modes keep the same session id and authoritative revision. The view
+uses Skybridge display-mode negotiation, host max-height, and safe-area insets.
+If the host rejects a mode request, the current mode remains usable and shows a
+recoverable error. Model-driven updates still require the explicit
+**Refresh latest** action proven by the fullscreen/PiP spike; the view accepts a
+fetched snapshot only when its revision is newer.
+
 The canvas state is defined and validated with Zod in [`src/domain/learning-canvas-state.ts`](src/domain/learning-canvas-state.ts). The authoritative session and revision results live in [`src/domain/learning-session.ts`](src/domain/learning-session.ts), while [`src/learning-session-store.ts`](src/learning-session-store.ts) is the small process-local action boundary. Its board keeps the current knot, tiny core idea, optional example, check question, optional typed interaction, user version, and confidence. Its timeline records compact microturn checkpoints with `open`, `understood`, `uncertain`, or `revisit` status.
 
 ### Implemented interaction blocks
@@ -112,6 +127,8 @@ Tunnel and deployment commands are intentionally not part of the default local w
 - The model cannot generate arbitrary React or executable UI. It can only provide data for the implemented typed interaction schemas.
 - Learning sessions are stored only in the current server process and disappear when it stops; there is no durable persistence layer, database, authentication, analytics, or external service.
 - Model-driven viewless updates do not push into an already-open canvas. The user must choose **Refresh latest**.
+- Display-mode requests are host-controlled. A host may reject a request or
+  coerce PiP to fullscreen, especially on mobile.
 - ChatGPT controls surrounding narration and status UI; the app does not guarantee their suppression.
 - The canvas supports one focused microturn at a time rather than generating a multi-step lesson.
 

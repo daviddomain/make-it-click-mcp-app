@@ -16,10 +16,14 @@ The app should help ChatGPT and the user share the same learning state:
 
 ## Core Experience
 
-Use a two-column view:
+Use a mode-aware shell around one authoritative learning session:
 
-- Left: learning board for the current mental model.
-- Right: microturn timeline that records the step-by-step coaching flow.
+- Inline: a compact topic, progress, and revision summary with one action to
+  open the learning canvas.
+- Fullscreen: the primary two-column workspace, with the learning board on the
+  left and the microturn timeline on the right.
+- PiP: a compact companion with the topic, current tiny idea or question,
+  progress, and a return-to-fullscreen action.
 
 The learning board should make the current model visible without replacing the conversation. The timeline should show progress and uncertainty across microturns.
 
@@ -80,6 +84,13 @@ Separate the coaching behavior into three layers:
    push-style updates are not assumed. Viewless calls avoid duplicate canvas
    widgets, but the ChatGPT host still controls surrounding narration and
    status UI.
+
+   The mounted view derives inline, fullscreen, and PiP presentations from the
+   same session id and authoritative revision. Display-mode requests remain
+   host-controlled and recover to the current usable presentation when
+   rejected. Only a newer fetched revision replaces the mounted snapshot.
+   Host max-height and safe-area insets bound each shell; fullscreen owns the
+   one deliberate vertical scroll surface.
 
 3. **Structured state instead of prompt-only behavior**
 
@@ -164,6 +175,7 @@ Represent learning state as data first, then render it through known components.
 View-backed start -> server-owned session -> React view
   -> typed user interaction -> viewless revision-guarded update
   -> explicit app-only refresh when the active view is stale
+  -> mode-specific inline, fullscreen, or PiP presentation
 ```
 
 The model should receive enough structured state to continue coaching from the current board and timeline.
