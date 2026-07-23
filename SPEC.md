@@ -28,6 +28,11 @@ part of the learning experience, not decoration only: the UI should guide
 attention toward the active microturn, especially the current check, and help
 the user stay with one small step until the concept clicks. Avoid visual
 complexity that makes the board feel like a raw state or debug dashboard.
+Treat the knot and tiny idea as compact context for the current check. Render
+the typed interaction and its submit feedback as the primary next action, keep
+the optional example close to that context, and place user reflection and
+confidence in secondary UI. The progress panel should remain visible for
+orientation without competing with the active check.
 
 The long-term product direction is an interactive learning canvas, not only a passive status board in chat. Chat-driven updates are the current stepping stone. The intended next direction is view-driven, typed interactions so the user can answer checks, select options, and provide feedback directly in the canvas while still supporting the Make It Click rhythm:
 

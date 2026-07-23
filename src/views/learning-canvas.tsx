@@ -3,7 +3,6 @@ import "@/index.css";
 import {
   BadgeCheck,
   CheckCircle2,
-  CircleDot,
   CircleHelp,
   Lightbulb,
   MessageCircleQuestion,
@@ -12,7 +11,7 @@ import {
   RefreshCcwDot,
   UserRoundCheck,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getAdaptor, useLayout } from "skybridge/web";
 
 import { useCallTool, useToolInfo } from "@/helpers.js";
@@ -54,39 +53,6 @@ const statusLabels: Record<TimelineStatus, string> = {
   uncertain: "Uncertain",
   revisit: "Revisit",
 };
-
-function FieldCard({
-  icon: Icon,
-  label,
-  tone = "default",
-  className = "",
-  children,
-}: {
-  icon: typeof CircleDot;
-  label: string;
-  tone?: "default" | "primary" | "secondary";
-  className?: string;
-  children: ReactNode;
-}) {
-  const toneClassNames = {
-    default: "bg-card shadow-sm",
-    primary:
-      "border-primary/40 bg-primary/5 shadow-sm dark:border-primary/50 dark:bg-primary/10",
-    secondary: "bg-muted/40 shadow-none",
-  }[tone];
-
-  return (
-    <section
-      className={`rounded-lg border border-border p-4 ${toneClassNames} ${className}`}
-    >
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-        <Icon className="size-4" aria-hidden="true" />
-        <h2>{label}</h2>
-      </div>
-      <div className="text-sm leading-6 text-foreground">{children}</div>
-    </section>
-  );
-}
 
 function StatusPill({ status }: { status: TimelineStatus }) {
   return (
@@ -132,9 +98,11 @@ function ExampleBlockView({ example }: { example: ExampleBlock | null }) {
 function MultipleChoiceCheckView({
   block,
   state,
+  showQuestion,
 }: {
   block: MultipleChoiceCheckBlock;
   state: LearningCanvasState;
+  showQuestion: boolean;
 }) {
   const [selectedOptionId, setSelectedOptionId] = useState(
     block.selectedOptionId ?? "",
@@ -236,12 +204,15 @@ function MultipleChoiceCheckView({
 
   return (
     <div
-      className="mt-4 rounded-md border border-primary/25 bg-background p-3"
+      className="mt-5 border-t border-primary/20 pt-5"
       data-llm={interactionDescription}
+      aria-busy={isPending}
     >
-      <p className="text-sm font-semibold leading-6">{block.question}</p>
+      {showQuestion ? (
+        <p className="text-sm font-semibold leading-6">{block.question}</p>
+      ) : null}
       <div
-        className="mt-3 grid gap-2"
+        className={`${showQuestion ? "mt-3" : ""} grid gap-2.5`}
         role="radiogroup"
         aria-label={block.question}
       >
@@ -260,7 +231,7 @@ function MultipleChoiceCheckView({
                 isSelected
                   ? "border-primary bg-primary/10 text-foreground"
                   : "border-border bg-card text-foreground hover:border-primary/50 hover:bg-muted/60"
-              } disabled:cursor-wait disabled:opacity-70`}
+              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-wait disabled:opacity-70`}
             >
               <span>{option.label}</span>
               {isSelected ? (
@@ -282,7 +253,7 @@ function MultipleChoiceCheckView({
         type="button"
         disabled={!interactionResult || isPending}
         onClick={handleSubmit}
-        className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
         {isPending ? "Submitting answer..." : "Submit answer"}
       </button>
@@ -365,107 +336,198 @@ export default function LearningCanvas() {
       className={`${theme === "dark" ? "dark" : ""} mx-auto w-full max-w-6xl bg-background p-4 text-foreground md:p-6`}
       data-llm={`Learning canvas for ${state.topic}. Current knot: ${state.board.currentKnot}. Check question: ${state.board.checkQuestion ?? "none"}.`}
     >
-      <div className="mb-4 flex flex-col gap-1 border-b border-border pb-4">
+      <header className="mb-5 border-b border-border pb-4">
         <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
           Make It Click canvas
         </p>
         <h1 className="text-xl font-semibold leading-7 text-foreground md:text-2xl">
           {state.topic}
         </h1>
-      </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Stay with one small step until it clicks.
+        </p>
+      </header>
 
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.8fr)]">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FieldCard icon={CircleHelp} label="What's confusing">
-            {state.board.currentKnot}
-          </FieldCard>
-          <FieldCard icon={Lightbulb} label="Tiny idea">
-            {state.board.tinyCoreIdea ?? (
-              <span className="text-muted-foreground">Not chosen yet.</span>
-            )}
-          </FieldCard>
-          <FieldCard
-            icon={PanelsTopLeft}
-            label="One example"
-            className="sm:col-span-2"
-          >
-            <ExampleBlockView example={state.board.exampleBlock} />
-          </FieldCard>
-          <div className="sm:col-span-2">
-            <FieldCard
-              icon={MessageCircleQuestion}
-              label="Your check"
-              tone="primary"
-            >
-              <p className="text-base font-medium leading-7">
-                {state.board.checkQuestion ?? (
+      <div className="grid gap-5 md:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.75fr)]">
+        <section aria-labelledby="learning-board-heading" className="min-w-0">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+                Current microturn
+              </p>
+              <h2
+                id="learning-board-heading"
+                className="text-lg font-semibold text-foreground"
+              >
+                Learning board
+              </h2>
+            </div>
+            <span className="rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground">
+              One idea · one check
+            </span>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm md:p-5">
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+                <CircleHelp className="size-4" aria-hidden="true" />
+                <h3>Current knot</h3>
+              </div>
+              <p className="text-sm leading-6 text-foreground">
+                {state.board.currentKnot}
+              </p>
+            </div>
+
+            <div className="mt-4 border-t border-border pt-4">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+                <Lightbulb className="size-4" aria-hidden="true" />
+                <h3>Tiny idea</h3>
+              </div>
+              <p className="text-sm leading-6 text-foreground">
+                {state.board.tinyCoreIdea ?? (
                   <span className="text-muted-foreground">
-                    No check question queued.
+                    Waiting for your answer before choosing the tiny idea.
                   </span>
                 )}
               </p>
-              {state.board.interactionBlock?.type === "MultipleChoiceCheck" ? (
-                <MultipleChoiceCheckView
-                  block={state.board.interactionBlock}
-                  state={state}
-                />
-              ) : null}
-            </FieldCard>
+            </div>
+
+            {state.board.exampleBlock ? (
+              <div className="mt-4 border-t border-border pt-4">
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+                  <PanelsTopLeft className="size-4" aria-hidden="true" />
+                  <h3>One example</h3>
+                </div>
+                <div className="text-sm leading-6 text-foreground">
+                  <ExampleBlockView example={state.board.exampleBlock} />
+                </div>
+              </div>
+            ) : null}
           </div>
-          <div className="sm:col-span-2 grid gap-4 sm:grid-cols-2">
-            <FieldCard
-              icon={UserRoundCheck}
-              label="User version"
-              tone="secondary"
+
+          <section
+            aria-labelledby="current-check-heading"
+            className={`mt-4 rounded-xl border p-5 shadow-sm md:p-6 ${
+              state.board.checkQuestion
+                ? "border-primary/45 bg-primary/5 dark:border-primary/55 dark:bg-primary/10"
+                : "border-border bg-card"
+            }`}
+          >
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-primary">
+              <MessageCircleQuestion className="size-4" aria-hidden="true" />
+              <span>Your next step</span>
+            </div>
+            <h3
+              id="current-check-heading"
+              className="mt-2 text-lg font-semibold text-foreground"
             >
-              {state.board.userVersion ?? (
+              Your check
+            </h3>
+            <p className="mt-2 text-base font-medium leading-7 text-foreground md:text-lg">
+              {state.board.checkQuestion ?? (
                 <span className="text-muted-foreground">
-                  No user version recorded yet.
+                  No check question queued.
                 </span>
               )}
-            </FieldCard>
-            <FieldCard icon={BadgeCheck} label="Confidence / status" tone="secondary">
-              <ConfidenceView confidence={state.board.confidence} />
-            </FieldCard>
-          </div>
-        </div>
+            </p>
+            {state.board.interactionBlock?.type === "MultipleChoiceCheck" ? (
+              <MultipleChoiceCheckView
+                block={state.board.interactionBlock}
+                state={state}
+                showQuestion={
+                  state.board.interactionBlock.question !==
+                  state.board.checkQuestion
+                }
+              />
+            ) : null}
+          </section>
 
-        <aside className="rounded-lg border border-border bg-card p-4 shadow-sm">
-          <div className="mb-4 flex items-center gap-2">
-            <NotebookText
-              className="size-4 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <h2 className="text-sm font-semibold">Learning progress</h2>
+          <details className="group mt-4 rounded-lg border border-border bg-muted/30">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-4 py-3 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background [&::-webkit-details-marker]:hidden">
+              <span>Reflection &amp; status</span>
+              <span className="text-xs font-normal text-muted-foreground group-open:hidden">
+                View details
+              </span>
+              <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
+                Hide details
+              </span>
+            </summary>
+            <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-2">
+              <section>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+                  <UserRoundCheck className="size-4" aria-hidden="true" />
+                  <h3>User version</h3>
+                </div>
+                <p className="text-sm leading-6 text-foreground">
+                  {state.board.userVersion ?? (
+                    <span className="text-muted-foreground">
+                      No user version recorded yet.
+                    </span>
+                  )}
+                </p>
+              </section>
+              <section>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+                  <BadgeCheck className="size-4" aria-hidden="true" />
+                  <h3>Confidence / status</h3>
+                </div>
+                <div className="text-sm leading-6 text-foreground">
+                  <ConfidenceView confidence={state.board.confidence} />
+                </div>
+              </section>
+            </div>
+          </details>
+        </section>
+
+        <aside
+          aria-labelledby="learning-progress-heading"
+          className="self-start rounded-xl border border-border bg-card p-4 shadow-sm"
+        >
+          <div className="mb-2 flex items-center justify-between gap-3 border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <NotebookText
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <h2 id="learning-progress-heading" className="text-sm font-semibold">
+                Learning progress
+              </h2>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {state.timeline.length}{" "}
+              {state.timeline.length === 1 ? "step" : "steps"}
+            </span>
           </div>
-          <ol className="flex flex-col gap-3">
+          <ol className="divide-y divide-border">
             {state.timeline.map((item) => (
-              <li
-                key={item.id}
-                className="rounded-lg border border-border bg-background p-3"
-              >
+              <li key={item.id} className="py-3 first:pt-1 last:pb-1">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">
                       {kindLabels[item.kind]}
                     </p>
-                    <h3 className="mt-1 text-sm font-medium leading-5">
+                    <h3 className="mt-0.5 text-sm font-medium leading-5">
                       {item.title}
                     </h3>
                   </div>
                   <StatusPill status={item.status} />
                 </div>
                 {item.summary ? (
-                  <p className="mt-2 text-sm leading-5 text-muted-foreground">
+                  <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
                     {item.summary}
                   </p>
                 ) : null}
               </li>
             ))}
           </ol>
-          <div className="mt-4 flex items-center gap-2 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
-            <RefreshCcwDot className="size-4 shrink-0" aria-hidden="true" />
-            Diagnose {"->"} one tiny idea {"->"} check {"->"} wait.
+          <div className="mt-3 flex items-start gap-2 border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
+            <RefreshCcwDot
+              className="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span>
+              Diagnose → one tiny idea → check → wait.
+            </span>
           </div>
         </aside>
       </div>
