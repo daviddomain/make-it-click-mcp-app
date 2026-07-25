@@ -48,6 +48,14 @@ recoverable error. Model-driven updates still require the explicit
 **Refresh latest** action proven by the fullscreen/PiP spike; the view accepts a
 fetched snapshot only when its revision is newer.
 
+The tool/view contract is centralized in
+[`src/domain/learning-session-tool-contract.ts`](src/domain/learning-session-tool-contract.ts)
+so automated coverage can prove that only the launcher is view-backed. Stable
+hardening fixtures exercise the authoritative session through three sequential
+updates, both implemented interaction-result types, stale and missing-session
+outcomes, revision reconciliation, and representative inline, fullscreen, and
+PiP containers.
+
 The canvas state is defined and validated with Zod in [`src/domain/learning-canvas-state.ts`](src/domain/learning-canvas-state.ts). The authoritative session and revision results live in [`src/domain/learning-session.ts`](src/domain/learning-session.ts), while [`src/learning-session-store.ts`](src/learning-session-store.ts) is the small process-local action boundary. Its board keeps the current knot, tiny core idea, optional example, check question, optional typed interaction, user version, and confidence. Its timeline records compact microturn checkpoints with `open`, `understood`, `uncertain`, or `revisit` status.
 
 ### Implemented interaction blocks
@@ -106,6 +114,19 @@ npm run build
 
 These commands are the bounded default validation workflow.
 
+The tests cover application-owned behavior only: session creation and
+revision-guarded updates, typed interaction results, stale/missing outcomes,
+presentation hierarchy, revision reconciliation, and the viewless read/update
+contract. After building, inspect the generated view registry:
+
+```powershell
+Get-Content .skybridge/views.d.ts
+```
+
+It should contain the shared `learning-canvas` view and the
+`start-learning-canvas` entry. `update_microturn` and
+`read_learning_session` must not appear as view entries.
+
 ## Bounded local DevTools check
 
 When an interactive smoke check is needed, start Skybridge DevTools in the foreground:
@@ -118,7 +139,26 @@ Open the local URL printed by Skybridge, invoke `start_learning_canvas`, and opt
 
 Stop the server with `Ctrl+C` as soon as the check is complete. Before finishing work, confirm that the command returned to the shell and that no project-related Skybridge, Node, watcher, or browser-automation process started for the check remains running.
 
-Tunnel and deployment commands are intentionally not part of the default local workflow.
+Tunnel and deployment commands are intentionally not part of the default local
+workflow.
+
+## Bounded ChatGPT acceptance
+
+Host behavior needs a real ChatGPT check because transcript placement,
+display-mode negotiation, surrounding narration, and host focus behavior
+cannot be guaranteed by unit tests. Follow the exact launch plus three-answer
+script, validation matrix, evidence template, tunnel steps, and PID-scoped
+cleanup in
+[`docs/chatgpt-learning-session-acceptance.md`](docs/chatgpt-learning-session-acceptance.md).
+
+The acceptance-only tunnel command is:
+
+```bash
+npm run dev:tunnel
+```
+
+Do not make the tunnel the default local workflow, deploy the app, or automate
+ChatGPT private DOM selectors or internal endpoints.
 
 ## Current limits
 
@@ -130,7 +170,13 @@ Tunnel and deployment commands are intentionally not part of the default local w
 - Display-mode requests are host-controlled. A host may reject a request or
   coerce PiP to fullscreen, especially on mobile.
 - ChatGPT controls surrounding narration and status UI; the app does not guarantee their suppression.
+- ChatGPT controls whether fullscreen or PiP requests are accepted, rejected,
+  or coerced, as well as transcript placement, iframe lifecycle, and focus
+  restoration around host mode changes.
 - The canvas supports one focused microturn at a time rather than generating a multi-step lesson.
+- Durable persistence, authentication, and cross-device recovery remain
+  follow-up work; they are not part of the current process-local session
+  contract.
 
 ## Sources of truth
 
