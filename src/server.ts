@@ -9,6 +9,7 @@ import {
   learningSessionUpdateInputShape,
   learningSessionUpdateOutputSchema,
 } from "@/domain/learning-session.js";
+import { learningSessionToolContract } from "@/domain/learning-session-tool-contract.js";
 import { createInitialLearningCanvasState } from "@/domain/start-learning-canvas.js";
 import { createInMemoryLearningSessionStore } from "@/learning-session-store.js";
 
@@ -40,17 +41,17 @@ const server = new McpServer(
           .optional()
           .describe("Optional context from the conversation or user's attempt."),
       },
-      view: {
-        component: "start-learning-canvas",
-        description:
-          "A compact Make It Click session launcher that expands into a focused fullscreen learning canvas or a small PiP companion.",
-      },
+      ...learningSessionToolContract.start_learning_canvas.registration,
       outputSchema: learningSessionStartOutputSchema.shape,
       _meta: {
         "openai/widgetAccessible": true,
         "openai/toolInvocation/invoking": "Opening learning canvas…",
         "openai/toolInvocation/invoked": "Learning canvas ready",
-        ui: { visibility: ["model", "app"] },
+        ui: {
+          visibility: [
+            ...learningSessionToolContract.start_learning_canvas.visibility,
+          ],
+        },
       },
     },
     async ({ topic, confusion, context }) => {
@@ -101,12 +102,17 @@ const server = new McpServer(
             "Optional next microturn. Include only one tiny idea, at most one example, and exactly one check question.",
           ),
       },
+      ...learningSessionToolContract.update_microturn.registration,
       outputSchema: learningSessionUpdateOutputSchema.shape,
       _meta: {
         "openai/widgetAccessible": true,
         "openai/toolInvocation/invoking": "Updating learning session…",
         "openai/toolInvocation/invoked": "Learning session updated",
-        ui: { visibility: ["model", "app"] },
+        ui: {
+          visibility: [
+            ...learningSessionToolContract.update_microturn.visibility,
+          ],
+        },
       },
     },
     async (input) => {
@@ -132,12 +138,17 @@ const server = new McpServer(
           "Stable session id returned by start_learning_canvas.",
         ),
       },
+      ...learningSessionToolContract.read_learning_session.registration,
       outputSchema: learningSessionReadOutputSchema.shape,
       _meta: {
         "openai/widgetAccessible": true,
         "openai/toolInvocation/invoking": "Refreshing learning session…",
         "openai/toolInvocation/invoked": "Learning session refreshed",
-        ui: { visibility: ["app"] },
+        ui: {
+          visibility: [
+            ...learningSessionToolContract.read_learning_session.visibility,
+          ],
+        },
       },
     },
     async ({ sessionId }) => {
